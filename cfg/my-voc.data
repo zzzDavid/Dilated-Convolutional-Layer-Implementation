@@ -1,0 +1,6 @@
+classes= 2
+train  = /data/data/zeroset/2017_train.txt
+valid  = /data/data/zeroset/2016_test.txt
+names = /home/tony/workspace/zeronet/darknet/data/my-voc.names
+backup = backup
+

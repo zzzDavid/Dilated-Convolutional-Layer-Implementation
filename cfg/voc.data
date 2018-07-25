@@ -1,0 +1,6 @@
+classes= 20
+train  = /home/kenny/workspace/darknet/voc/bak/train.txt
+valid  = /home/kenny/workspace/darknet/voc/2007_test.txt
+names = data/voc.names
+backup = backup
+
