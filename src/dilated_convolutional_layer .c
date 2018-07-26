@@ -68,22 +68,22 @@ void binarize_input(float *input, int n, int size, float *binary)
 **  输入：l    卷积层，包含该卷积层的所有参数，实际这里没有必要输入整个l，因为只需要到其中的四个参数而已
 **  输出：int类型，输出图像的高度
 */
-int dilated_conv_out_height(dilated_convolutional_layer *l)
+int dilated_conv_out_height(dilated_convolutional_layer l)
 {
-    return (l->h + 2*l->pad - l->size) / l->stride + 1;
+    return (l.h + 2*l.pad - l.size) / l.stride + 1;
 }
 
-int dilated_conv_out_width(dilated_convolutional_layer *l)
+int dilated_conv_out_width(dilated_convolutional_layer l)
 {
-    return (l->w + 2*l->pad - l->size) / l->stride + 1;
+    return (l.w + 2*l.pad - l.size) / l.stride + 1;
 }
 
-image get_convolutional_image(dilated_convolutional_layer l)
+image get_dilated_conv_image(dilated_convolutional_layer l)
 {
     return float_to_image(l.out_w,l.out_h,l.out_c,l.output);
 }
 
-image get_convolutional_delta(dilated_convolutional_layer l)
+image get_dilated_conv_delta(dilated_convolutional_layer l)
 {
     return float_to_image(l.out_w,l.out_h,l.out_c,l.delta);
 }
@@ -178,7 +178,7 @@ void cudnn_convolutional_setup(layer *l)
 #endif
 #endif
 
-dilated_convolutional_layer make_convolutional_layer(int batch, int h, int w, int c, int n, int groups, int size, int stride, int padding, ACTIVATION activation, int batch_normalize, int binary, int xnor, int adam)
+dilated_convolutional_layer make_dilated_conv_layer(int batch, int h, int w, int c, int n, int groups, int size, int stride, int padding, ACTIVATION activation, int batch_normalize, int binary, int xnor, int adam)
 {
     int i;
     dilated_convolutional_layer l = {0};
@@ -212,8 +212,8 @@ dilated_convolutional_layer make_convolutional_layer(int batch, int h, int w, in
     //scale = .02;
     //for(i = 0; i < c*n*size*size; ++i) l.weights[i] = scale*rand_uniform(-1, 1);
     for(i = 0; i < l.nweights; ++i) l.weights[i] = scale*rand_normal();
-    int out_w = convolutional_out_width(l);
-    int out_h = convolutional_out_height(l);
+    int out_w = dilated_conv_out_width(l);
+    int out_h = dilated_conv_out_height(l);
     l.out_h = out_h;
     l.out_w = out_w;
     l.out_c = n;
@@ -223,9 +223,9 @@ dilated_convolutional_layer make_convolutional_layer(int batch, int h, int w, in
     l.output = calloc(l.batch*l.outputs, sizeof(float));
     l.delta  = calloc(l.batch*l.outputs, sizeof(float));
 
-    l.forward = forward_convolutional_layer;
-    l.backward = backward_convolutional_layer;
-    l.update = update_convolutional_layer;
+    l.forward = forward_dilated_conv_layer;
+    l.backward = backward_dilated_conv_layer;
+    l.update = update_dilated_conv_layer;
     if(binary){
         l.binary_weights = calloc(l.nweights, sizeof(float));
         l.cweights = calloc(l.nweights, sizeof(char));
@@ -332,7 +332,7 @@ dilated_convolutional_layer make_convolutional_layer(int batch, int h, int w, in
     return l;
 }
 
-void denormalize_convolutional_layer(dilated_convolutional_layer l)
+void denormalize_dilated_conv_layer(dilated_convolutional_layer l)
 {
     int i, j;
     for(i = 0; i < l.n; ++i){
@@ -372,12 +372,12 @@ void test_convolutional_layer()
 }
 */
 
-void resize_convolutional_layer(dilated_convolutional_layer *l, int w, int h)
+void resize_dilated_conv_layer(dilated_convolutional_layer *l, int w, int h)
 {
     l->w = w;
     l->h = h;
-    int out_w = convolutional_out_width(*l);
-    int out_h = convolutional_out_height(*l);
+    int out_w = dilated_conv_out_width(*l);
+    int out_h = dilated_conv_out_height(*l);
 
     l->out_w = out_w;
     l->out_h = out_h;
@@ -447,7 +447,7 @@ void backward_bias(float *bias_updates, float *delta, int batch, int n, int size
     }
 }
 
-void forward_convolutional_layer(dilated_convolutional_layer l, network net)
+void forward_dilated_conv_layer(dilated_convolutional_layer l, network net)
 {
     int i, j;
 
@@ -511,7 +511,7 @@ void forward_convolutional_layer(dilated_convolutional_layer l, network net)
     if(l.binary || l.xnor) swap_binary(&l);
 }
 
-void backward_convolutional_layer(dilated_convolutional_layer l, network net)
+void backward_dilated_conv_layer(dilated_convolutional_layer l, network net)
 {
     int i, j;
     int m = l.n/l.groups;
@@ -562,7 +562,7 @@ void backward_convolutional_layer(dilated_convolutional_layer l, network net)
     }
 }
 
-void update_convolutional_layer(dilated_convolutional_layer l, update_args a)
+void update_dilated_conv_layer(dilated_convolutional_layer l, update_args a)
 {
     float learning_rate = a.learning_rate*l.learning_rate_scale;
     float momentum = a.momentum;
@@ -583,7 +583,7 @@ void update_convolutional_layer(dilated_convolutional_layer l, update_args a)
 }
 
 
-image get_convolutional_weight(dilated_convolutional_layer l, int i)
+image get_dilated_conv_weight(dilated_convolutional_layer l, int i)
 {
     int h = l.size;
     int w = l.size;
@@ -595,7 +595,7 @@ void rgbgr_weights(dilated_convolutional_layer l)
 {
     int i;
     for(i = 0; i < l.n; ++i){
-        image im = get_convolutional_weight(l, i);
+        image im = get_dilated_conv_weight(l, i);
         if (im.c == 3) {
             rgbgr_image(im);
         }
@@ -606,7 +606,7 @@ void rescale_weights(dilated_convolutional_layer l, float scale, float trans)
 {
     int i;
     for(i = 0; i < l.n; ++i){
-        image im = get_convolutional_weight(l, i);
+        image im = get_dilated_conv_weight(l, i);
         if (im.c == 3) {
             scale_image(im, scale);
             float sum = sum_array(im.data, im.w*im.h*im.c);
@@ -620,7 +620,7 @@ image *get_weights(dilated_convolutional_layer l)
     image *weights = calloc(l.n, sizeof(image));
     int i;
     for(i = 0; i < l.n; ++i){
-        weights[i] = copy_image(get_convolutional_weight(l, i));
+        weights[i] = copy_image(get_dilated_conv_weight(l, i));
         normalize_image(weights[i]);
         /*
            char buff[256];
@@ -632,12 +632,12 @@ image *get_weights(dilated_convolutional_layer l)
     return weights;
 }
 
-image *visualize_convolutional_layer(dilated_convolutional_layer l, char *window, image *prev_weights)
+image *visualize_dilated_conv_layer(dilated_convolutional_layer l, char *window, image *prev_weights)
 {
     image *single_weights = get_weights(l);
     show_images(single_weights, l.n, window);
 
-    image delta = get_convolutional_image(l);
+    image delta = get_dilated_conv_image(l);
     image dc = collapse_image_layers(delta, 1);
     char buff[256];
     sprintf(buff, "%s: Output", window);

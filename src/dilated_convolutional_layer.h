@@ -39,9 +39,9 @@ void backward_dilated_conv_layer(dilated_convolutional_layer layer, network net)
 void add_bias(float *output, float *biases, int batch, int n, int size);
 void backward_bias(float *bias_updates, float *delta, int batch, int n, int size);
 
-image get_dilated_conv_image(dilated_convolutional_layer *layer);
-image get_dilated_conv_delta(dilated_convolutional_layer *layer);
-image get_dilated_conv_weight(dilated_convolutional_layer *layer, int i);
+image get_dilated_conv_image(dilated_convolutional_layer layer);
+image get_dilated_conv_delta(dilated_convolutional_layer layer);
+image get_dilated_conv_weight(dilated_convolutional_layer layer, int i);
 
 int dilated_conv_out_height(dilated_convolutional_layer layer);
 int dilated_conv_out_width(dilated_convolutional_layer layer);
