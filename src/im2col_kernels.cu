@@ -18,12 +18,10 @@ __global__ void im2col_gpu_kernel(const int n, const float* data_im,
         float *data_col) {
     int index = blockIdx.x*blockDim.x+threadIdx.x;
     for(; index < n; index += blockDim.x*gridDim.x){
-    	int h_index = index / width_col;
-    	int channel_in = h_index / height_col;
-    	//int w_out = index % width_col;
-        //int h_out = h_index % height_col;
-    	int w_out = index -  h_index * width_col;
-        int h_out = h_index - channel_in * height_col;
+        int w_out = index % width_col;
+        int h_index = index / width_col;
+        int h_out = h_index % height_col;
+        int channel_in = h_index / height_col;
         int channel_out = channel_in * ksize * ksize;
         int h_in = h_out * stride - pad;
         int w_in = w_out * stride - pad;
@@ -31,74 +29,18 @@ __global__ void im2col_gpu_kernel(const int n, const float* data_im,
         data_col_ptr += (channel_out * height_col + h_out) * width_col + w_out;
         const float* data_im_ptr = data_im;
         data_im_ptr += (channel_in * height + h_in) * width + w_in;
-        switch(ksize) {
-        case 1:
-#pragma unroll
-        	for (int i = 0; i < 1; ++i) {
-#pragma unroll
-        		for (int j = 0; j < 1; ++j) {
-        			int h = h_in + i;
-        			int w = w_in + j;
-        			bool tmp = (h >= 0 && w >= 0 && h < height && w < width);
-        			*data_col_ptr = tmp?
-        					data_im_ptr[i * width + j] : 0;
+        for (int i = 0; i < ksize; ++i) {
+            for (int j = 0; j < ksize; ++j) {
+                int h = h_in + i;
+                int w = w_in + j;
 
-        			//*data_col_ptr = data_im_ptr[ii * width + jj];
+                *data_col_ptr = (h >= 0 && w >= 0 && h < height && w < width) ?
+                    data_im_ptr[i * width + j] : 0;
 
-        			data_col_ptr += height_col * width_col;
-        		}
-        	}
-        	break;
-        case 3:
-#pragma unroll
-        	for (int i = 0; i < 3; ++i) {
-#pragma unroll
-        		for (int j = 0; j < 3; ++j) {
-        			int h = h_in + i;
-        			int w = w_in + j;
+                //*data_col_ptr = data_im_ptr[ii * width + jj];
 
-        			bool tmp = (h >= 0 && w >= 0 && h < height && w < width);
-        			*data_col_ptr = tmp?
-        					data_im_ptr[i * width + j] : 0;
-
-        			//*data_col_ptr = data_im_ptr[ii * width + jj];
-
-        			data_col_ptr += height_col * width_col;
-        		}
-        	}
-        	break;
-        case 5:
-#pragma unroll
-        	for (int i = 0; i < 3; ++i) {
-#pragma unroll
-        		for (int j = 0; j < 3; ++j) {
-        			int h = h_in + i;
-        			int w = w_in + j;
-
-        			*data_col_ptr = (h >= 0 && w >= 0 && h < height && w < width) ?
-        					data_im_ptr[i * width + j] : 0;
-
-        			//*data_col_ptr = data_im_ptr[ii * width + jj];
-
-        			data_col_ptr += height_col * width_col;
-        		}
-        	}
-        	break;
-        default:
-            for (int i = 0; i < ksize; ++i) {
-                for (int j = 0; j <ksize; ++j) {
-                    int h = h_in + i;
-                    int w = w_in + j;
-
-                    *data_col_ptr = (h >= 0 && w >= 0 && h < height && w < width) ?
-                        data_im_ptr[i * width + j] : 0;
-
-                    //*data_col_ptr = data_im_ptr[ii * width + jj];
-
-                    data_col_ptr += height_col * width_col;
-                }
+                data_col_ptr += height_col * width_col;
             }
-            break;
         }
     }
 }

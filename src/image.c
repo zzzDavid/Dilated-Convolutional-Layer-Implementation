@@ -10,8 +10,6 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
-extern int GROUP_CONV;
-
 int windows = 0;
 
 float colors[6][3] = { {1,0,1}, {0,0,1},{0,1,1},{0,1,0},{1,1,0},{1,0,0} };
@@ -45,6 +43,51 @@ image mask_to_rgb(image mask)
     }
     return im;
 }
+
+static float get_pixel(image m, int x, int y, int c)
+{
+    assert(x < m.w && y < m.h && c < m.c);
+    return m.data[c*m.h*m.w + y*m.w + x];
+}
+static float get_pixel_extend(image m, int x, int y, int c)
+{
+    if(x < 0 || x >= m.w || y < 0 || y >= m.h) return 0;
+    /*
+    if(x < 0) x = 0;
+    if(x >= m.w) x = m.w-1;
+    if(y < 0) y = 0;
+    if(y >= m.h) y = m.h-1;
+    */
+    if(c < 0 || c >= m.c) return 0;
+    return get_pixel(m, x, y, c);
+}
+static void set_pixel(image m, int x, int y, int c, float val)
+{
+    if (x < 0 || y < 0 || c < 0 || x >= m.w || y >= m.h || c >= m.c) return;
+    assert(x < m.w && y < m.h && c < m.c);
+    m.data[c*m.h*m.w + y*m.w + x] = val;
+}
+static void add_pixel(image m, int x, int y, int c, float val)
+{
+    assert(x < m.w && y < m.h && c < m.c);
+    m.data[c*m.h*m.w + y*m.w + x] += val;
+}
+
+static float bilinear_interpolate(image im, float x, float y, int c)
+{
+    int ix = (int) floorf(x);
+    int iy = (int) floorf(y);
+
+    float dx = x - ix;
+    float dy = y - iy;
+
+    float val = (1-dy) * (1-dx) * get_pixel_extend(im, ix, iy, c) + 
+        dy     * (1-dx) * get_pixel_extend(im, ix, iy+1, c) + 
+        (1-dy) *   dx   * get_pixel_extend(im, ix+1, iy, c) +
+        dy     *   dx   * get_pixel_extend(im, ix+1, iy+1, c);
+    return val;
+}
+
 
 void composite_image(image source, image dest, int dx, int dy)
 {
@@ -88,32 +131,9 @@ image tile_images(image a, image b, int dx)
 
 image get_label(image **characters, char *string, int size)
 {
+    size = size/10;
     if(size > 7) size = 7;
     image label = make_empty_image(0,0,0);
-    while(*string){
-        image l = characters[size][(int)*string];
-        image n = tile_images(label, l, -size - 1 + (size+1)/2);
-        free_image(label);
-        label = n;
-        ++string;
-    }
-    image b = border_image(label, label.h*.25);
-    free_image(label);
-    return b;
-}
-
-image get_label_new(image **characters, char *string, char *numstring, int size)
-{
-    if(size > 9) size = 9;
-    image label = make_empty_image(0,0,0);
-	while(*numstring){
-        image l = characters[size][(int)*numstring];
-        image n = tile_images(label, l, -size - 1 + (size+1)/2);
-        free_image(label);
-        label = n;
-        ++numstring;
-    }
-    
     while(*string){
         image l = characters[size][(int)*string];
         image n = tile_images(label, l, -size - 1 + (size+1)/2);
@@ -216,173 +236,36 @@ image **load_alphabet()
     return alphabets;
 }
 
-void draw_ssd_detections(image im, int num, const float thresh, box_b *boxes, ScoreLabelIndex* results, char **names, image **alphabet, int classes)
+void draw_detections(image im, detection *dets, int num, float thresh, char **names, image **alphabet, int classes)
 {
-    int i;
-    for (i = 0; i < num; ++i) {
-        ScoreLabelIndex sli = results[i];
-        printf("sli: score:%f, label:%d, index, %d.\n", sli.score, sli.label, sli.index);
-        if (sli.score < thresh) {
-            // no results
-            printf("no detections > threshold %f\n", thresh);
-            return;
-        } else {
-            int width = im.h * .006;
-            printf("%s: %.0f%%\n", names[sli.label], sli.score*100);
-            int offset = sli.label*123457 % classes;
-            float red = get_color(2,offset,classes);
-            float green = get_color(1,offset,classes);
-            float blue = get_color(0,offset,classes);
-            float rgb[3];
-            
-            rgb[0] = red;
-            rgb[1] = green;
-            rgb[2] = blue;
-            box_b b = boxes[sli.index];
-            
-            int left  = b.xmin *im.w;
-            int right = b.xmax *im.w;
-            int top   = b.ymin *im.h;
-            int bot   = b.ymax *im.h;
-            
-            if(left < 0) left = 0;
-            if(right > im.w-1) right = im.w-1;
-            if(top < 0) top = 0;
-            if(bot > im.h-1) bot = im.h-1;
-            printf("Loc = %d, %d, %d, %d\n", left, top, right, bot);
-            
-            draw_box_width(im, left, top, right, bot, width, red, green, blue);
-            if (alphabet) {
-                image label = get_label(alphabet, names[sli.label], (im.h*.03)/10);
-                draw_label(im, top + width, left, label, rgb);
-                free_image(label);
-            }
-        }
-    }
-}
+    int i,j;
 
-int nodraw_ssd_detections(int imw, int imh, int num, const float thresh, box_b *boxes, ScoreLabelIndex* results, char **names, image **alphabet, int classes, box_output *box1, int max_boxes)
-{
-    int i;
-    int count = 0;
-    for (i = 0; i < num; ++i) {
-        ScoreLabelIndex sli = results[i];
-        if( (strcmp(names[sli.label],"car") == 0) || (strcmp(names[sli.label],"person") == 0) ){
-			//printf("sli: score:%f, label:%d, index, %d.\n", sli.score, sli.label, sli.index);
-			if (sli.score < thresh) {
-				// no results
-				//printf("no detections > threshold %f\n", thresh);
-				//return;
-			} else {
-				count++;
-				//printf("count = %d\n" ,count);
-				int width = imh * .006;
-				//printf("%s: %.0f%%\n", names[sli.label], sli.score*100);
-				int offset = sli.label*123457 % classes;
-				float red = get_color(2,offset,classes);
-				float green = get_color(1,offset,classes);
-				float blue = get_color(0,offset,classes);
-				float rgb[3];
-				
-				rgb[0] = red;
-				rgb[1] = green;
-				rgb[2] = blue;
-				box_b b = boxes[sli.index];
-				
-				int left  = b.xmin *imw;
-				int right = b.xmax *imw;
-				int top   = b.ymin *imh;
-				int bot   = b.ymax *imh;
-				
-				if(left < 0) left = 0;
-				if(right > imw-1) right = imw-1;
-				if(top < 0) top = 0;
-				if(bot > imh-1) bot = imh-1;            
-				//box b = boxes[i];                  
-				if (count <= max_boxes){
-					box1[count-1].x = (b.xmin + b.xmax)/2.0;
-					box1[count-1].y = (b.ymin + b.ymax)/2.0;
-					box1[count-1].w = (b.xmax - b.xmin);
-					box1[count-1].h = (b.ymax - b.ymin);
-					box1[count-1].prob = sli.score;
-					box1[count-1].cls = sli.label;
-				}
-					 
-			}
-		}
-    }
-    return count;
-}
-
-
-void draw_ssd_detections_data(image im, const int num, float thresh, float *boxes, float* results, char **names, image **alphabet, int classes)
-{
-    int i;
-    for (i = 0; i < num; ++i) {
-        float *sli = results + i * 3;
-        float score = sli[0];
-        int index = (int)sli[1];
-        int c = (int)sli[2];
-        
-        if (score < thresh) {
-            // no results
-            //            printf("no detections > threshold %f\n", thresh);
-            return;
-        } else if (score > 1e-6f){
-            int width = im.h * .006;
-            printf("%s: %.06f%%\n", names[c], score);
-            int offset = c*123457 % classes;
-            float red = get_color(2,offset,classes);
-            float green = get_color(1,offset,classes);
-            float blue = get_color(0,offset,classes);
-            float rgb[3];
-            
-            rgb[0] = red;
-            rgb[1] = green;
-            rgb[2] = blue;
-            float *b = boxes + index * 4;
-            
-            int left  = b[0]*im.w;
-            int right = b[2]*im.w;
-            int top   = b[1]*im.h;
-            int bot   = b[3]*im.h;
-            
-            if(left < 0) left = 0;
-            if(right > im.w-1) right = im.w-1;
-            if(top < 0) top = 0;
-            if(bot > im.h-1) bot = im.h-1;
-            printf("Loc = %d, %d, %d, %d\n", left, top, right, bot);
-            
-            draw_box_width(im, left, top, right, bot, width, red, green, blue);
-            if (alphabet) {
-                image label = get_label(alphabet, names[c], (im.h*.03)/10);
-                draw_label(im, top + width, left, label, rgb);
-                free_image(label);
-            }
-        }
-    }
-}
-
-int draw_detections_box(image im, int num, float thresh, box *boxes, float **probs, float **masks, char **names, image **alphabet, int classes, box *box1, int max_boxes)
-{
-    int i;
-    int count = 0;
-    char *count_index = malloc(sizeof(char)*30);
     for(i = 0; i < num; ++i){
-        int class = max_index(probs[i], classes);
-        float prob = probs[i][class];
-        if((prob > thresh) && ((strcmp(names[class],"car") == 0)||(strcmp(names[class],"person") == 0)||(strcmp(names[class],"bus") == 0))){
-        //if(prob > thresh){			
-            int width = im.h * .006;
-            count++;
-
-            if(0){
-                width = pow(prob, 1./2.)*10+1;
-                alphabet = 0;
+        char labelstr[4096] = {0};
+        int class = -1;
+        for(j = 0; j < classes; ++j){
+            if (dets[i].prob[j] > thresh){
+                if (class < 0) {
+                    strcat(labelstr, names[j]);
+                    class = j;
+                } else {
+                    strcat(labelstr, ", ");
+                    strcat(labelstr, names[j]);
+                }
+                printf("%s: %.0f%%\n", names[j], dets[i].prob[j]*100);
             }
+        }
+        if(class >= 0){
+            int width = im.h * .006;
 
-            printf("%d %s: %.0f%%\n", count, names[class], prob*100);
-            //printf("%s: %.0f%%\n", names[class], prob*100);
+            /*
+               if(0){
+               width = pow(prob, 1./2.)*10+1;
+               alphabet = 0;
+               }
+             */
+
+            //printf("%d %s: %.0f%%\n", i, names[class], prob*100);
             int offset = class*123457 % classes;
             float red = get_color(2,offset,classes);
             float green = get_color(1,offset,classes);
@@ -394,8 +277,8 @@ int draw_detections_box(image im, int num, float thresh, box *boxes, float **pro
             rgb[0] = red;
             rgb[1] = green;
             rgb[2] = blue;
-            box b = boxes[i];
-            
+            box b = dets[i].bbox;
+            //printf("%f %f %f %f\n", b.x, b.y, b.w, b.h);
 
             int left  = (b.x-b.w/2.)*im.w;
             int right = (b.x+b.w/2.)*im.w;
@@ -406,238 +289,21 @@ int draw_detections_box(image im, int num, float thresh, box *boxes, float **pro
             if(right > im.w-1) right = im.w-1;
             if(top < 0) top = 0;
             if(bot > im.h-1) bot = im.h-1;
-            
-            if (count <= max_boxes){
-				box1[count-1].x = b.x;
-				box1[count-1].y = b.y;
-				box1[count-1].w = b.w;
-				box1[count-1].h = b.h;
-			}
-			          
-            
-            draw_box_width(im, left, top, right, bot, width, red, green, blue);
-            if (alphabet) {
-				sprintf(count_index,"%d %s",count,names[class]);
-                //image label = get_label(alphabet, names[class], (im.h*.03)/10);
-                image label = get_label(alphabet, count_index, (im.h*.03)/10);
-                draw_label(im, top + width, left, label, rgb);
-                free_image(label);
-            }
-        }
-    }
-    free(count_index);
-    return count;
-}
-
-int draw_detections_output(image im, int num, float thresh, box *boxes, float **probs, float **masks, char **names, image **alphabet, int classes, box_output *box1, int max_boxes)
-{
-    int i;
-    int count = 0;
-    char *count_index = malloc(sizeof(char)*30);
-    for(i = 0; i < num; ++i){
-        int class = max_index(probs[i], classes);
-        float prob = probs[i][class];
-        if((prob > thresh) && ((strcmp(names[class],"car") == 0)||(strcmp(names[class],"person") == 0)||(strcmp(names[class],"bus") == 0))){
-        //if(prob > thresh){			
-            int width = im.h * .006;
-            count++;
-
-            if(0){
-                width = pow(prob, 1./2.)*10+1;
-                alphabet = 0;
-            }
-
-            printf("%d %s: %.0f%%\n", count, names[class], prob*100);
-            //printf("%s: %.0f%%\n", names[class], prob*100);
-
-
-            //width = prob*20+2;
-
-            box b = boxes[i];                  
-            if (count <= max_boxes){
-				box1[count-1].x = b.x;
-				box1[count-1].y = b.y;
-				box1[count-1].w = b.w;
-				box1[count-1].h = b.h;
-				box1[count-1].prob = prob;
-				box1[count-1].cls = class;
-			}			          
-        }
-    }
-    free(count_index);
-    return count;
-}
-
-
-int draw_detections_box_crop(image im, image cropped, int num, float thresh, box *boxes, float **probs, float **masks, char **names, image **alphabet, int classes, box* out_box)
-{
-    int i;
-    int count = 0;
-
-    for(i = 0; i < num; ++i){
-        int class = max_index(probs[i], classes);
-        float prob = probs[i][class];
-        if(prob > thresh){
-            int width = im.h * .006;
-            count ++;
-
-            if(0){
-                width = pow(prob, 1./2.)*10+1;
-                alphabet = 0;
-            }
-
-            //printf("%d %s: %.0f%%\n", i, names[class], prob*100);
-            printf("%s: %.0f%%\n", names[class], prob*100);
-            int offset = class*123457 % classes;
-            float red = get_color(2,offset,classes);
-            float green = get_color(1,offset,classes);
-            float blue = get_color(0,offset,classes);
-            float rgb[3];
-
-            //width = prob*20+2;
-
-            rgb[0] = red;
-            rgb[1] = green;
-            rgb[2] = blue;
-            box b = boxes[i];
-            if(count == 1) {
-                out_box->x = b.x;
-                out_box->y = b.y;
-                out_box->w = b.w;
-                out_box->h = b.h;
-            }
-            int left  = (b.x-b.w/2.)*cropped.w + (im.w - cropped.w)/2;
-            int right = (b.x+b.w/2.)*cropped.w + (im.w - cropped.w)/2;
-            int top   = (b.y-b.h/2.)*cropped.h + (im.h - cropped.h)/2;
-            int bot   = (b.y+b.h/2.)*cropped.h + (im.h - cropped.h)/2;
-
-            if(left < 0) left = 0;
-            if(right > im.w-1) right = im.w-1;
-            if(top < 0) top = 0;
-            if(bot > im.h-1) bot = im.h-1;
 
             draw_box_width(im, left, top, right, bot, width, red, green, blue);
             if (alphabet) {
-                image label = get_label(alphabet, names[class], (im.h*.03)/10);
+                image label = get_label(alphabet, labelstr, (im.h*.03));
                 draw_label(im, top + width, left, label, rgb);
                 free_image(label);
             }
-            if (masks){
-                image mask = float_to_image(14, 14, 1, masks[i]);
+            if (dets[i].mask){
+                image mask = float_to_image(14, 14, 1, dets[i].mask);
                 image resized_mask = resize_image(mask, b.w*im.w, b.h*im.h);
                 image tmask = threshold_image(resized_mask, .5);
                 embed_image(tmask, im, left, top);
                 free_image(mask);
                 free_image(resized_mask);
                 free_image(tmask);
-            }
-        }
-    }
-    return count;
-}
-
-void draw_detections(image im, int num, float thresh, box *boxes, float **probs, float **masks, char **names, image **alphabet, int classes)
-{
-    int i;
-
-    for(i = 0; i < num; ++i){
-        int class = max_index(probs[i], classes);
-        float prob = probs[i][class];
-        if(prob > thresh){
-            int width = im.h * .006;
-
-            if(0){
-                width = pow(prob, 1./2.)*10+1;
-                alphabet = 0;
-            }
-
-            //printf("%d %s: %.0f%%\n", i, names[class], prob*100);
-            printf("%s: %.0f%%\n", names[class], prob*100);
-            int offset = class*123457 % classes;
-            float red = get_color(2,offset,classes);
-            float green = get_color(1,offset,classes);
-            float blue = get_color(0,offset,classes);
-            float rgb[3];
-
-            //width = prob*20+2;
-
-            rgb[0] = red;
-            rgb[1] = green;
-            rgb[2] = blue;
-            box b = boxes[i];
-
-            int left  = (b.x-b.w/2.)*im.w;
-            int right = (b.x+b.w/2.)*im.w;
-            int top   = (b.y-b.h/2.)*im.h;
-            int bot   = (b.y+b.h/2.)*im.h;
-
-            if(left < 0) left = 0;
-            if(right > im.w-1) right = im.w-1;
-            if(top < 0) top = 0;
-            if(bot > im.h-1) bot = im.h-1;
-
-            draw_box_width(im, left, top, right, bot, width, red, green, blue);
-            if (alphabet) {
-                image label = get_label(alphabet, names[class], (im.h*.03)/10);
-                draw_label(im, top + width, left, label, rgb);
-                free_image(label);
-            }
-        }
-    }
-}
-
-void draw_detections_crop(image im, image orig_im, int num, float thresh, box *boxes, float **probs, float **masks, char **names, image **alphabet, int classes)
-{
-    int i;
-
-    for(i = 0; i < num; ++i){
-        int class = max_index(probs[i], classes);
-        float prob = probs[i][class];
-        if(prob > thresh){
-            int width = im.h * .006;
-
-            if(0){
-                width = pow(prob, 1./2.)*10+1;
-                alphabet = 0;
-            }
-
-            //printf("%d %s: %.0f%%\n", i, names[class], prob*100);
-            printf("%s: %.0f%%\n", names[class], prob*100);
-            int offset = class*123457 % classes;
-            float red = get_color(2,offset,classes);
-            float green = get_color(1,offset,classes);
-            float blue = get_color(0,offset,classes);
-            float rgb[3];
-
-            //width = prob*20+2;
-
-            rgb[0] = red;
-            rgb[1] = green;
-            rgb[2] = blue;
-            box b = boxes[i];
-
-            int left  = (b.x-b.w/2.)*im.w;
-            int right = (b.x+b.w/2.)*im.w;
-            int top   = (b.y-b.h/2.)*im.h;
-            int bot   = (b.y+b.h/2.)*im.h;
-
-            if(left < 0) left = 0;
-            if(right > im.w-1) right = im.w-1;
-            if(top < 0) top = 0;
-            if(bot > im.h-1) bot = im.h-1;
-
-            int dx = (orig_im.w - im.w)/2;
-            int dy = (orig_im.h - im.h)/2; 
-            left += dx;
-            top += dy;
-            bot += dy;
-            right += dx;
-
-            draw_box_width(orig_im, left, top, right, bot, width, red, green, blue);
-            if (alphabet) {
-                image label = get_label(alphabet, names[class], (im.h*.03)/10);
-                draw_label(orig_im, top + width, left, label, rgb);
-                free_image(label);
             }
         }
     }
@@ -730,6 +396,35 @@ void ghost_image(image source, image dest, int dx, int dy)
     }
 }
 
+void blocky_image(image im, int s)
+{
+    int i,j,k;
+    for(k = 0; k < im.c; ++k){
+        for(j = 0; j < im.h; ++j){
+            for(i = 0; i < im.w; ++i){
+                im.data[i + im.w*(j + im.h*k)] = im.data[i/s*s + im.w*(j/s*s + im.h*k)];
+            }
+        }
+    }
+}
+
+void censor_image(image im, int dx, int dy, int w, int h)
+{
+    int i,j,k;
+    int s = 32;
+    if(dx < 0) dx = 0;
+    if(dy < 0) dy = 0;
+
+    for(k = 0; k < im.c; ++k){
+        for(j = dy; j < dy + h && j < im.h; ++j){
+            for(i = dx; i < dx + w && i < im.w; ++i){
+                im.data[i + im.w*(j + im.h*k)] = im.data[i/s*s + im.w*(j/s*s + im.h*k)];
+                //im.data[i + j*im.w + k*im.w*im.h] = 0;
+            }
+        }
+    }
+}
+
 void embed_image(image source, image dest, int dx, int dy)
 {
     int x,y,k;
@@ -761,14 +456,8 @@ image collapse_image_layers(image source, int border)
 void constrain_image(image im)
 {
     int i;
-    
-    float neg_edge = 0;
-//#ifdef CAFFE_INPUT_TYPE
-    if(GROUP_CONV) neg_edge = -1.f;
-//#endif
-    
     for(i = 0; i < im.w*im.h*im.c; ++i){
-        if(im.data[i] < neg_edge) im.data[i] = neg_edge;
+        if(im.data[i] < 0) im.data[i] = 0;
         if(im.data[i] > 1) im.data[i] = 1;
     }
 }
@@ -857,17 +546,13 @@ void show_image_cv(image p, const char *name, IplImage *disp)
     sprintf(buff, "%s", name);
 
     int step = disp->widthStep;
-    // cvNamedWindow(buff, CV_WINDOW_NORMAL); 
+    cvNamedWindow(buff, CV_WINDOW_NORMAL); 
     //cvMoveWindow(buff, 100*(windows%10) + 200*(windows/10), 100*(windows%10));
     ++windows;
     for(y = 0; y < p.h; ++y){
         for(x = 0; x < p.w; ++x){
             for(k= 0; k < p.c; ++k){
-//#ifdef CAFFE_INPUT_TYPE
-                if(GROUP_CONV) disp->imageData[y*step + x*p.c + k] = (unsigned char)(get_pixel(p,x,y,k)*127.5f + 127.5f);
-//#else
-                else disp->imageData[y*step + x*p.c + k] = (unsigned char)(get_pixel(p,x,y,k)*255.0f);
-//#endif
+                disp->imageData[y*step + x*p.c + k] = (unsigned char)(get_pixel(p,x,y,k)*255);
             }
         }
     }
@@ -884,30 +569,6 @@ void show_image_cv(image p, const char *name, IplImage *disp)
         cvReleaseImage(&buffer);
     }
     cvShowImage(buff, disp);
-/////////////////////////////////////////////////////////////////////
-
-	{
-		CvSize size;
-		{
-			size.width = disp->width, size.height = disp->height;
-		}
-
-		static CvVideoWriter* output_video = NULL;    // cv::VideoWriter output_video;
-		if (output_video == NULL)
-		{
-			printf("\n SRC output_video = %p \n", output_video);
-			const char* output_name = "test_dnn_out.avi";
-			//output_video = cvCreateVideoWriter(output_name, CV_FOURCC('H', '2', '6', '4'), 25, size, 1);
-			output_video = cvCreateVideoWriter(output_name, CV_FOURCC('D', 'I', 'V', 'X'), 25, size, 1);
-			//output_video = cvCreateVideoWriter(output_name, CV_FOURCC('M', 'J', 'P', 'G'), 25, size, 1);
-			printf("\n cvCreateVideoWriter, DST output_video = %p  \n", output_video);
-		}
-
-		cvWriteFrame(output_video, disp);
-		printf("\n cvWriteFrame \n");
-	}
-
-////////////////////////////////////////////////////////////////////////
 }
 #endif
 
@@ -925,6 +586,7 @@ void show_image(image p, const char *name)
     save_image(p, name);
 #endif
 }
+
 #ifdef OPENCV
 
 void ipl_into_image(IplImage* src, image im)
@@ -939,11 +601,7 @@ void ipl_into_image(IplImage* src, image im)
     for(i = 0; i < h; ++i){
         for(k= 0; k < c; ++k){
             for(j = 0; j < w; ++j){
-//#ifdef CAFFE_INPUT_TYPE
-                if(GROUP_CONV) im.data[k*w*h + i*w + j] = (data[i*step + j*c + k] - 127.5)*0.007843;
-//#else
-                else im.data[k*w*h + i*w + j] = data[i*step + j*c + k]/255.0;
-//#endif
+                im.data[k*w*h + i*w + j] = data[i*step + j*c + k]/255.;
             }
         }
     }
@@ -1025,13 +683,7 @@ void save_image_jpg(image p, const char *name)
     for(y = 0; y < p.h; ++y){
         for(x = 0; x < p.w; ++x){
             for(k= 0; k < p.c; ++k){
-                float pixel = get_pixel(copy,x,y,k);
-//#ifdef CAFFE_INPUT_TYPE
-                if(GROUP_CONV) pixel = pixel * 127.5f + 127.5f;
-//#else
-                else pixel = pixel * 255.f;
-//#endif
-                disp->imageData[y*step + x*p.c + k] = (unsigned char)(pixel);
+                disp->imageData[y*step + x*p.c + k] = (unsigned char)(get_pixel(copy,x,y,k)*255);
             }
         }
     }
@@ -1104,13 +756,6 @@ image make_image(int w, int h, int c)
     return out;
 }
 
-image make_image_from_rgb(int w, int h, int c, float* rgb)
-{
-    image out = make_image(w,h,c);
-    memcpy(out.data, rgb, w * h * c * sizeof(float));
-    return out;
-}
-
 image make_random_image(int w, int h, int c)
 {
     image out = make_empty_image(w,h,c);
@@ -1135,8 +780,8 @@ void place_image(image im, int w, int h, int dx, int dy, image canvas)
     for(c = 0; c < im.c; ++c){
         for(y = 0; y < h; ++y){
             for(x = 0; x < w; ++x){
-                int rx = ((float)x / w) * im.w;
-                int ry = ((float)y / h) * im.h;
+                float rx = ((float)x / w) * im.w;
+                float ry = ((float)y / h) * im.h;
                 float val = bilinear_interpolate(im, rx, ry, c);
                 set_pixel(canvas, x + dx, y + dy, c, val);
             }
@@ -1227,25 +872,6 @@ image crop_image(image im, int dx, int dy, int w, int h)
         }
     }
     return cropped;
-}
-
-void crop_into_image(image im, int dx, int dy, image dst_img)
-{
-    // image cropped = make_image(w, h, im.c);
-    int i, j, k;
-    for(k = 0; k < im.c; ++k){
-        for(j = 0; j < dst_img.h; ++j){
-            for(i = 0; i < dst_img.w; ++i){
-                int r = j + dy;
-                int c = i + dx;
-                float val = 0;
-                r = constrain_int(r, 0, im.h-1);
-                c = constrain_int(c, 0, im.w-1);
-                val = get_pixel(im, c, r, k);
-                set_pixel(dst_img, i, j, k, val);
-            }
-        }
-    }
 }
 
 int best_3d_shift_r(image a, image b, int min, int max)
@@ -1344,13 +970,7 @@ image letterbox_image(image im, int w, int h)
     }
     image resized = resize_image(im, new_w, new_h);
     image boxed = make_image(w, h, im.c);
-    float zero_val = .5f;
-    
-//#ifdef CAFFE_INPUT_TYPE
-    if(GROUP_CONV) zero_val = .0f;
-//#endif
-    
-    fill_image(boxed, zero_val);
+    fill_image(boxed, .5);
     //int i;
     //for(i = 0; i < boxed.w*boxed.h*boxed.c; ++i) boxed.data[i] = 0;
     embed_image(resized, boxed, (w-new_w)/2, (h-new_h)/2); 
@@ -1410,8 +1030,8 @@ augment_args random_augment_args(image im, float angle, float aspect, int low, i
 
     float dx = (im.w*scale/aspect - w) / 2.;
     float dy = (im.h*scale - w) / 2.;
-    if(dx < 0) dx = 0;
-    if(dy < 0) dy = 0;
+    //if(dx < 0) dx = 0;
+    //if(dy < 0) dy = 0;
     dx = rand_uniform(-dx, dx);
     dy = rand_uniform(-dy, dy);
 
@@ -1656,12 +1276,8 @@ image binarize_image(image im)
 {
     image c = copy_image(im);
     int i;
-    float mid_val = .5f;
-//#ifdef CAFFE_INPUT_TYPE
-    if(GROUP_CONV) mid_val = 0.f;
-//#endif
     for(i = 0; i < im.w * im.h * im.c; ++i){
-        if(c.data[i] > mid_val) c.data[i] = 1;
+        if(c.data[i] > .5) c.data[i] = 1;
         else c.data[i] = 0;
     }
     return c;
@@ -1679,14 +1295,10 @@ void hue_image(image im, float hue)
 {
     rgb_to_hsv(im);
     int i;
-    float neg_edge = 0.000000001f;
-//#ifdef CAFFE_INPUT_TYPE
-    if(GROUP_CONV) neg_edge = -1.f;
-//#endif
     for(i = 0; i < im.w*im.h; ++i){
         im.data[i] = im.data[i] + hue;
         if (im.data[i] > 1) im.data[i] -= 1;
-        if (im.data[i] < neg_edge) im.data[i] += 1;
+        if (im.data[i] < 0) im.data[i] += 1;
     }
     hsv_to_rgb(im);
     constrain_image(im);
@@ -1730,21 +1342,6 @@ void saturate_exposure_image(image im, float sat, float exposure)
     scale_image_channel(im, 2, exposure);
     hsv_to_rgb(im);
     constrain_image(im);
-}
-
-float bilinear_interpolate(image im, float x, float y, int c)
-{
-    int ix = (int) floorf(x);
-    int iy = (int) floorf(y);
-
-    float dx = x - ix;
-    float dy = y - iy;
-
-    float val = (1-dy) * (1-dx) * get_pixel_extend(im, ix, iy, c) + 
-        dy     * (1-dx) * get_pixel_extend(im, ix, iy+1, c) + 
-        (1-dy) *   dx   * get_pixel_extend(im, ix+1, iy, c) +
-        dy     *   dx   * get_pixel_extend(im, ix+1, iy+1, c);
-    return val;
 }
 
 image resize_image(image im, int w, int h)
@@ -1858,12 +1455,7 @@ image load_image_stb(char *filename, int channels)
             for(i = 0; i < w; ++i){
                 int dst_index = i + w*j + w*h*k;
                 int src_index = k + c*i + c*w*j;
-//#ifdef CAFFE_INPUT_TYPE
-                if(GROUP_CONV) im.data[dst_index] = (float)(data[src_index] - 127.5f) * 0.007843;
-//#else
-                else im.data[dst_index] = (float)data[src_index]/255.;
-//#endif
-                
+                im.data[dst_index] = (float)data[src_index]/255.;
             }
         }
     }
@@ -1901,33 +1493,6 @@ image get_image_layer(image m, int l)
     }
     return out;
 }
-
-float get_pixel(image m, int x, int y, int c)
-{
-    assert(x < m.w && y < m.h && c < m.c);
-    return m.data[c*m.h*m.w + y*m.w + x];
-}
-float get_pixel_extend(image m, int x, int y, int c)
-{
-    if(x < 0) x = 0;
-    if(x >= m.w) x = m.w-1;
-    if(y < 0) y = 0;
-    if(y >= m.h) y = m.h-1;
-    if(c < 0 || c >= m.c) return 0;
-    return get_pixel(m, x, y, c);
-}
-void set_pixel(image m, int x, int y, int c, float val)
-{
-    if (x < 0 || y < 0 || c < 0 || x >= m.w || y >= m.h || c >= m.c) return;
-    assert(x < m.w && y < m.h && c < m.c);
-    m.data[c*m.h*m.w + y*m.w + x] = val;
-}
-void add_pixel(image m, int x, int y, int c, float val)
-{
-    assert(x < m.w && y < m.h && c < m.c);
-    m.data[c*m.h*m.w + y*m.w + x] += val;
-}
-
 void print_image(image m)
 {
     int i, j, k;

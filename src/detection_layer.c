@@ -222,43 +222,7 @@ void backward_detection_layer(const detection_layer l, network net)
     axpy_cpu(l.batch*l.inputs, 1, l.delta, 1, net.delta, 1);
 }
 
-void get_ssd_detection_boxes(layer l, float thresh, float **probs, box_b *boxes)
-{
-	float *decoded_boxes = l.output;
-    //printf("output = %f \n", l.output[0]);
-    float *conf_data = l.output + l.num_priors * 4;
-    
-    
-    int num_boxes = l.num_priors;
-    //printf("num_priors = %d \n", num_boxes);
-    int i, j;
-    for (i =0; i <num_boxes; ++i) {
-        float xmin = decoded_boxes[i * 4];
-        float xmax = decoded_boxes[i * 4 + 2];
-        float ymin = decoded_boxes[i * 4 + 1];
-        float ymax = decoded_boxes[i * 4 + 3];
-        
-        boxes[i].xmin = xmin;
-        boxes[i].xmax = xmax;
-        boxes[i].ymin = ymin;//xmax - xmin;
-        boxes[i].ymax = ymax;//ymax -ymin;
-	    //printf("Loc = %d %d %d %d\n", xmin, xmax, ymin, ymax);
-        
-        for (j = 0; j < l.num_classes; ++j) {
-            float prob = conf_data[ j * num_boxes + i];
-            probs[j][i] = (prob > thresh) ? prob : 0;
-	        if(prob > thresh && j > 0) {
-	            //printf("j, i = %d %d \n", j, i);
-				//printf("Loc = (%f, %f, %f, %f)  Prob=%f \n", boxes[i].xmin, boxes[i].xmax, boxes[i].ymin, boxes[i].ymax, prob);
-			}
-        }
-    }
-}
-
-
-
-
-void get_detection_boxes(layer l, int w, int h, float thresh, float **probs, box *boxes, int only_objectness)
+void get_detection_detections(layer l, int w, int h, float thresh, detection *dets)
 {
     int i,j,n;
     float *predictions = l.output;
@@ -271,17 +235,17 @@ void get_detection_boxes(layer l, int w, int h, float thresh, float **probs, box
             int p_index = l.side*l.side*l.classes + i*l.n + n;
             float scale = predictions[p_index];
             int box_index = l.side*l.side*(l.classes + l.n) + (i*l.n + n)*4;
-            boxes[index].x = (predictions[box_index + 0] + col) / l.side * w;
-            boxes[index].y = (predictions[box_index + 1] + row) / l.side * h;
-            boxes[index].w = pow(predictions[box_index + 2], (l.sqrt?2:1)) * w;
-            boxes[index].h = pow(predictions[box_index + 3], (l.sqrt?2:1)) * h;
+            box b;
+            b.x = (predictions[box_index + 0] + col) / l.side * w;
+            b.y = (predictions[box_index + 1] + row) / l.side * h;
+            b.w = pow(predictions[box_index + 2], (l.sqrt?2:1)) * w;
+            b.h = pow(predictions[box_index + 3], (l.sqrt?2:1)) * h;
+            dets[index].bbox = b;
+            dets[index].objectness = scale;
             for(j = 0; j < l.classes; ++j){
                 int class_index = i*l.classes;
                 float prob = scale*predictions[class_index+j];
-                probs[index][j] = (prob > thresh) ? prob : 0;
-            }
-            if(only_objectness){
-                probs[index][0] = scale;
+                dets[index].prob[j] = (prob > thresh) ? prob : 0;
             }
         }
     }
@@ -296,9 +260,7 @@ void forward_detection_layer_gpu(const detection_layer l, network net)
         return;
     }
 
-    //float *in_cpu = calloc(l.batch*l.inputs, sizeof(float));
-    //float *truth_cpu = 0;
-
+    cuda_pull_array(net.input_gpu, net.input, l.batch*l.inputs);
     forward_detection_layer(l, net);
     cuda_push_array(l.output_gpu, l.output, l.batch*l.outputs);
     cuda_push_array(l.delta_gpu, l.delta, l.batch*l.inputs);

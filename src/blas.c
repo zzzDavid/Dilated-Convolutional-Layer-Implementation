@@ -65,7 +65,7 @@ void weighted_delta_cpu(float *a, float *b, float *s, float *da, float *db, floa
     }
 }
 
-void shortcut_cpu(int batch, int w1, int h1, int c1, float *add, int w2, int h2, int c2, float *out)
+void shortcut_cpu(int batch, int w1, int h1, int c1, float *add, int w2, int h2, int c2, float s1, float s2, float *out)
 {
     int stride = w1/w2;
     int sample = w2/w1;
@@ -84,7 +84,7 @@ void shortcut_cpu(int batch, int w1, int h1, int c1, float *add, int w2, int h2,
                 for(i = 0; i < minw; ++i){
                     int out_index = i*sample + w2*(j*sample + h2*(k + c2*b));
                     int add_index = i*stride + w1*(j*stride + h1*(k + c1*b));
-                    out[out_index] += add[add_index];
+                    out[out_index] = s1*out[out_index] + s2*add[add_index];
                 }
             }
         }
@@ -122,6 +122,27 @@ void variance_cpu(float *x, float *mean, int batch, int filters, int spatial, fl
         variance[i] *= scale;
     }
 }
+
+void l2normalize_cpu(float *x, float *dx, int batch, int filters, int spatial)
+{
+    int b,f,i;
+    for(b = 0; b < batch; ++b){
+        for(i = 0; i < spatial; ++i){
+            float sum = 0;
+            for(f = 0; f < filters; ++f){
+                int index = b*filters*spatial + f*spatial + i;
+                sum += powf(x[index], 2);
+            }
+            sum = sqrtf(sum);
+            for(f = 0; f < filters; ++f){
+                int index = b*filters*spatial + f*spatial + i;
+                x[index] /= sum;
+                dx[index] = (1 - x[index]) / sum;
+            }
+        }
+    }
+}
+
 
 void normalize_cpu(float *x, float *mean, float *variance, int batch, int filters, int spatial)
 {
@@ -241,6 +262,28 @@ void l1_cpu(int n, float *pred, float *truth, float *delta, float *error)
     }
 }
 
+void softmax_x_ent_cpu(int n, float *pred, float *truth, float *delta, float *error)
+{
+    int i;
+    for(i = 0; i < n; ++i){
+        float t = truth[i];
+        float p = pred[i];
+        error[i] = (t) ? -log(p) : 0;
+        delta[i] = t-p;
+    }
+}
+
+void logistic_x_ent_cpu(int n, float *pred, float *truth, float *delta, float *error)
+{
+    int i;
+    for(i = 0; i < n; ++i){
+        float t = truth[i];
+        float p = pred[i];
+        error[i] = -t*log(p) - (1-t)*log(1-p);
+        delta[i] = t-p;
+    }
+}
+
 void l2_cpu(int n, float *pred, float *truth, float *delta, float *error)
 {
     int i;
@@ -288,113 +331,21 @@ void softmax_cpu(float *input, int n, int batch, int batch_offset, int groups, i
     }
 }
 
-
-
-void bin_sort_group_float(float *in_data, int group, int num)
+void upsample_cpu(float *in, int w, int h, int c, int batch, int stride, int forward, float scale, float *out)
 {
-    int i = 0;
-    int left = 0;
-    int right = 0;
-    int mid = 0;
-    int j = 0;
-    int k = 0;
-    
-    float *temp = (float*)malloc(group * sizeof(float));
-    
-    for(i = 1; i < num; ++i)
-    {
-        left = 0;
-        right = i - 1;
-        mid = 0;
-        for(k = 0; k < group; ++k) {
-            temp[k] = in_data[i * group + k];
-        }
-        
-        while(left <= right)
-        {
-            mid = (left + right)/2;
-            if(temp[0] < in_data[mid * group])
-            {
-                left = mid + 1;
-            } else {
-                right = mid - 1;
+    int i, j, k, b;
+    for(b = 0; b < batch; ++b){
+        for(k = 0; k < c; ++k){
+            for(j = 0; j < h*stride; ++j){
+                for(i = 0; i < w*stride; ++i){
+                    int in_index = b*w*h*c + k*w*h + (j/stride)*w + i/stride;
+                    int out_index = b*w*h*c*stride*stride + k*w*h*stride*stride + j*w*stride + i;
+                    if(forward) out[out_index] = scale*in[in_index];
+                    else in[in_index] += scale*out[out_index];
+                }
             }
         }
-        
-        for(j = i - 1; j > right; j--) {
-            for(k = 0; k < group; ++k) {
-                in_data[(j + 1) * group + k] = in_data[j * group + k];
-            }
-        }
-        
-        if(right != i) {
-            for(k = 0; k <group; ++k) {
-                in_data[(right+1) * group + k] = temp[k];
-            }
-        }
-        //        printf("第%d次排序:\n", i);
-        //        for (k = 0; k < num * group; ++k) {
-        //            printf(" %d ", in_data[k]);
-        //        }
-        //        printf("\n");
-        
     }
-    
-    free(temp);
-    
 }
 
 
-void bin_sort_group_int(int *in_data, int group, int num)
-{
-	int i = 0;
-	int left = 0;
-	int right = 0;
-	int mid = 0;
-	int j = 0;
-	int k = 0;
-	
-	int *temp = (int*)malloc(group * sizeof(int));
-	
-	for(i = 1; i < num; ++i)
-	{
-		left = 0;
-		right = i - 1;
-        mid = 0;
-		for(k = 0; k < group; ++k) {
-			temp[k] = in_data[i * group + k];
-		}
-		
-		while(left <= right)
-		{
-			mid = (left + right)/2;
-			if(temp[0] < in_data[mid * group])
-			{
-				left = mid + 1;
-			} else {
-				right = mid - 1;
-			}
-		}
-		
-		for(j = i - 1; j > right; j--) {
-			for(k = 0; k < group; ++k) {
-				in_data[(j + 1) * group + k] = in_data[j * group + k];
-			}
-		}
-		
-		if(right != i) {
-			for(k = 0; k <group; ++k) {
-				in_data[(right+1) * group + k] = temp[k];
-			}
-		}
-//        printf("第%d次排序:\n", i);
-//        for (k = 0; k < num * group; ++k) {
-//            printf(" %d ", in_data[k]);
-//        }
-//        printf("\n");
-        
-    }
-    
-    free(temp);
-		
-}

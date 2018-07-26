@@ -117,7 +117,6 @@ void gemm_tn(int M, int N, int K, float ALPHA,
         for(k = 0; k < K; ++k){
             register float A_PART = ALPHA*A[k*lda+i];
             for(j = 0; j < N; ++j){
-                //printf("A = %f, B = %f, M = %d, N = %d, K = %d, ALPHA = %f\n", A_PART, B[k*ldb+j], i, j, k, ALPHA);
                 C[i*ldc+j] += A_PART*B[k*ldb+j];
             }
         }
@@ -181,26 +180,6 @@ void gemm_gpu(int TA, int TB, int M, int N, int K, float ALPHA,
             (TA ? CUBLAS_OP_T : CUBLAS_OP_N), N, M, K, &ALPHA, B_gpu, ldb, A_gpu, lda, &BETA, C_gpu, ldc);
     check_error(status);
 }
-
-void group_gemm_gpu(int TA, int TB, int M, int N, int K, float ALPHA,
-              float *A_gpu, int lda, int offset_A,
-              float *B_gpu, int ldb, int offset_B,
-              float BETA,
-              float *C_gpu, int ldc, int offset_C, int group)
-{
-    cublasHandle_t handle = blas_handle();
-    if(M == 1) {
-    	ztSgmvStrideBatched(A_gpu, K,
-    			B_gpu, N, group, C_gpu);
-    }
-    else {
-        cudaError_t status = cublasSgemmStridedBatched(handle, (TB ? CUBLAS_OP_T : CUBLAS_OP_N),
-                                         (TA ? CUBLAS_OP_T : CUBLAS_OP_N), N, M, K, &ALPHA, B_gpu, ldb, offset_B, A_gpu, lda, offset_A, &BETA, C_gpu, ldc, offset_C, group);
-        check_error(status);
-    }
-}
-
-
 
 #include <stdio.h>
 #include <stdlib.h>

@@ -93,8 +93,5 @@ void free_layer(layer l)
     if(l.rand_gpu)                cuda_free(l.rand_gpu);
     if(l.squared_gpu)             cuda_free(l.squared_gpu);
     if(l.norms_gpu)               cuda_free(l.norms_gpu);
-    if(l.permute_orders_gpu)      cuda_free((float *)l.permute_orders_gpu);
-    if(l.permute_new_steps_gpu)   cuda_free((float *)l.permute_new_steps_gpu);
-    if(l.permute_old_steps_gpu)   cuda_free((float *)l.permute_old_steps_gpu);
 #endif
 }

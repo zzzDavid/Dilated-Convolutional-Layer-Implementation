@@ -11,7 +11,6 @@ int gpu_index = 0;
 
 void cuda_set_device(int n)
 {
-	//printf("gpu_index = %d\n", n);
     gpu_index = n;
     cudaError_t status = cudaSetDevice(n);
     check_error(status);
@@ -173,5 +172,7 @@ float cuda_mag_array(float *x_gpu, size_t n)
     free(temp);
     return m;
 }
+#else
+void cuda_set_device(int n){}
 
 #endif

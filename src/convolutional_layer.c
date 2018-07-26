@@ -115,7 +115,7 @@ static size_t get_workspace_size(layer l){
         return most;
     }
 #endif
-    return (size_t)l.out_h*l.out_w*l.size*l.size*l.c*sizeof(float);
+    return (size_t)l.out_h*l.out_w*l.size*l.size*l.c/l.groups*sizeof(float);
 }
 
 #ifdef GPU
@@ -124,53 +124,62 @@ void cudnn_convolutional_setup(layer *l)
 {
     cudnnSetTensor4dDescriptor(l->dsrcTensorDesc, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, l->batch, l->c, l->h, l->w); 
     cudnnSetTensor4dDescriptor(l->ddstTensorDesc, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, l->batch, l->out_c, l->out_h, l->out_w); 
-    cudnnSetFilter4dDescriptor(l->dweightDesc, CUDNN_DATA_FLOAT, CUDNN_TENSOR_NCHW, l->n, l->c, l->size, l->size); 
 
     cudnnSetTensor4dDescriptor(l->srcTensorDesc, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, l->batch, l->c, l->h, l->w); 
     cudnnSetTensor4dDescriptor(l->dstTensorDesc, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, l->batch, l->out_c, l->out_h, l->out_w); 
     cudnnSetTensor4dDescriptor(l->normTensorDesc, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, 1, l->out_c, 1, 1); 
-    cudnnSetFilter4dDescriptor(l->weightDesc, CUDNN_DATA_FLOAT, CUDNN_TENSOR_NCHW, l->n, l->c, l->size, l->size); 
+
+    cudnnSetFilter4dDescriptor(l->dweightDesc, CUDNN_DATA_FLOAT, CUDNN_TENSOR_NCHW, l->n, l->c/l->groups, l->size, l->size); 
+    cudnnSetFilter4dDescriptor(l->weightDesc, CUDNN_DATA_FLOAT, CUDNN_TENSOR_NCHW, l->n, l->c/l->groups, l->size, l->size); 
     #if CUDNN_MAJOR >= 6
     cudnnSetConvolution2dDescriptor(l->convDesc, l->pad, l->pad, l->stride, l->stride, 1, 1, CUDNN_CROSS_CORRELATION, CUDNN_DATA_FLOAT);
     #else
     cudnnSetConvolution2dDescriptor(l->convDesc, l->pad, l->pad, l->stride, l->stride, 1, 1, CUDNN_CROSS_CORRELATION);
     #endif
+
+    #if CUDNN_MAJOR >= 7
+    cudnnSetConvolutionGroupCount(l->convDesc, l->groups);
+    #else
+    if(l->groups > 1){
+        error("CUDNN < 7 doesn't support groups, please upgrade!");
+    }
+    #endif
+
     cudnnGetConvolutionForwardAlgorithm(cudnn_handle(),
             l->srcTensorDesc,
             l->weightDesc,
             l->convDesc,
             l->dstTensorDesc,
-            CUDNN_CONVOLUTION_FWD_PREFER_FASTEST,
-            0,
+            CUDNN_CONVOLUTION_FWD_SPECIFY_WORKSPACE_LIMIT,
+            4000000000,
             &l->fw_algo);
     cudnnGetConvolutionBackwardDataAlgorithm(cudnn_handle(),
             l->weightDesc,
             l->ddstTensorDesc,
             l->convDesc,
             l->dsrcTensorDesc,
-            CUDNN_CONVOLUTION_BWD_DATA_PREFER_FASTEST,
-            0,
+            CUDNN_CONVOLUTION_BWD_DATA_SPECIFY_WORKSPACE_LIMIT,
+            4000000000,
             &l->bd_algo);
     cudnnGetConvolutionBackwardFilterAlgorithm(cudnn_handle(),
             l->srcTensorDesc,
             l->ddstTensorDesc,
             l->convDesc,
             l->dweightDesc,
-            CUDNN_CONVOLUTION_BWD_FILTER_PREFER_FASTEST,
-            0,
+            CUDNN_CONVOLUTION_BWD_FILTER_SPECIFY_WORKSPACE_LIMIT,
+            4000000000,
             &l->bf_algo);
 }
 #endif
 #endif
 
-convolutional_layer make_convolutional_layer(int groups, int batch, int h, int w, int c, int n, int size, int stride, int padding, ACTIVATION activation, int batch_normalize, int binary, int xnor, int adam)
+convolutional_layer make_convolutional_layer(int batch, int h, int w, int c, int n, int groups, int size, int stride, int padding, ACTIVATION activation, int batch_normalize, int binary, int xnor, int adam)
 {
     int i;
     convolutional_layer l = {0};
     l.type = CONVOLUTIONAL;
-    
-    l.groups = groups > 0? groups : 1; ///////
-    
+
+    l.groups = groups;
     l.h = h;
     l.w = w;
     l.c = c;
@@ -182,20 +191,22 @@ convolutional_layer make_convolutional_layer(int groups, int batch, int h, int w
     l.size = size;
     l.pad = padding;
     l.batch_normalize = batch_normalize;
-    l.weights = calloc(c*n*size*size/l.groups, sizeof(float));
-    l.weight_updates = calloc(c*n*size*size/l.groups, sizeof(float));
+
+    l.weights = calloc(c/groups*n*size*size, sizeof(float));
+    l.weight_updates = calloc(c/groups*n*size*size, sizeof(float));
 
     l.biases = calloc(n, sizeof(float));
     l.bias_updates = calloc(n, sizeof(float));
 
-    l.nweights = c*n*size*size/l.groups;
+    l.nweights = c/groups*n*size*size;
     l.nbiases = n;
 
     // float scale = 1./sqrt(size*size*c);
-    float scale = sqrt(2./(size*size*c));
+    float scale = sqrt(2./(size*size*c/l.groups));
+    //printf("convscale %f\n", scale);
     //scale = .02;
     //for(i = 0; i < c*n*size*size; ++i) l.weights[i] = scale*rand_uniform(-1, 1);
-    for(i = 0; i < c*n*size*size/l.groups; ++i) l.weights[i] = scale*rand_normal();
+    for(i = 0; i < l.nweights; ++i) l.weights[i] = scale*rand_normal();
     int out_w = convolutional_out_width(l);
     int out_h = convolutional_out_height(l);
     l.out_h = out_h;
@@ -263,7 +274,7 @@ convolutional_layer make_convolutional_layer(int groups, int batch, int h, int w
         }
 
         l.weights_gpu = cuda_make_array(l.weights, l.nweights);
-        l.weight_updates_gpu = cuda_make_array(l.weight_updates, l.nweights); 
+        l.weight_updates_gpu = cuda_make_array(l.weight_updates, l.nweights);
 
         l.biases_gpu = cuda_make_array(l.biases, n);
         l.bias_updates_gpu = cuda_make_array(l.bias_updates, n);
@@ -310,11 +321,8 @@ convolutional_layer make_convolutional_layer(int groups, int batch, int h, int w
 #endif
     l.workspace_size = get_workspace_size(l);
     l.activation = activation;
-    static float totalBflops = 0;
-    float bflops = (float)l.out_w * l.out_h * l.out_c * size * size * c/(float)l.groups/1024.0/1024.0/1024.0*2;
-    totalBflops += bflops;
-    fprintf(stderr, "conv  %5d/%d %2d x%2d /%2d  %4d x%4d x%4d   ->  %4d x%4d x%4d		%.3f Bflops total = %.3f Bflops\n",
-    		n, l.groups, size, size, stride, w, h, c, l.out_w, l.out_h, l.out_c, bflops, totalBflops);
+
+    fprintf(stderr, "conv  %5d %2d x%2d /%2d  %4d x%4d x%4d   ->  %4d x%4d x%4d  %5.3f BFLOPs\n", n, size, size, stride, w, h, c, l.out_w, l.out_h, l.out_c, (2.0 * l.n * l.size*l.size*l.c/l.groups * l.out_h*l.out_w)/1000000000.);
 
     return l;
 }
@@ -324,8 +332,8 @@ void denormalize_convolutional_layer(convolutional_layer l)
     int i, j;
     for(i = 0; i < l.n; ++i){
         float scale = l.scales[i]/sqrt(l.rolling_variance[i] + .00001);
-        for(j = 0; j < l.c*l.size*l.size; ++j){
-            l.weights[i*l.c*l.size*l.size + j] *= scale;
+        for(j = 0; j < l.c/l.groups*l.size*l.size; ++j){
+            l.weights[i*l.c/l.groups*l.size*l.size + j] *= scale;
         }
         l.biases[i] -= l.rolling_mean[i] * scale;
         l.scales[i] = 1;
@@ -436,83 +444,72 @@ void backward_bias(float *bias_updates, float *delta, int batch, int n, int size
 
 void forward_convolutional_layer(convolutional_layer l, network net)
 {
-    //printf("Processing forward!\n");
-//    int out_h = l.out_h;
-//    int out_w = l.out_w;
-    int i;
+    int i, j;
 
     fill_cpu(l.outputs*l.batch, 0, l.output, 1);
 
-    if(l.xnor){
-        binarize_weights(l.weights, l.n, l.c*l.size*l.size, l.binary_weights);
-        swap_binary(&l);
-        binarize_cpu(net.input, l.c*l.h*l.w*l.batch, l.binary_input);
+    if(l.xnor){                                                                              // XNor-Net architecture 
+        binarize_weights(l.weights, l.n, l.c/l.groups*l.size*l.size, l.binary_weights);      // binarilize weight
+        swap_binary(&l);                                                                     // swap weight & binary_weight
+        binarize_cpu(net.input, l.c*l.h*l.w*l.batch, l.binary_input);                        // binarilize input
         net.input = l.binary_input;
     }
 
-    int m = l.n;
-    int k = l.size*l.size*l.c/l.groups;
-    int n = l.out_h*l.out_w;
+    int m = l.n/l.groups;                                // kernel's channel (per group) = number of rows in weight matrix
+    int k = l.size*l.size*l.c/l.groups;                  // number of columns in weight matrix
+    int n = l.out_w*l.out_h;                             // number of columns in output matrix
+    for(i = 0; i < l.batch; ++i){
+        for(j = 0; j < l.groups; ++j){
+            float *a = l.weights + j*l.nweights/l.groups;   // weight matrix
+            float *b = net.workspace;                       // re-formated image data
+            float *c = l.output + (i*l.groups + j)*n*m;     // output matrix
+            float *im =  net.input + (i*l.groups + j)*l.c/l.groups*l.h*l.w;    // input data
 
-
-    float *a = l.weights;
-    float *b = net.workspace;
-    float *c = l.output;
-    float temp = net.input[0];
-
-//    assert(l.groups >0);
-//    if (l.groups <= 1) {
-//        for(i = 0; i < l.batch; ++i){
-//            im2col_cpu(net.input, l.c, l.h, l.w,
-//                       l.size, l.stride, l.pad, b);
-//            gemm(0,0,m,n,k,1,a,k,b,n,1,c,n);
-//            c += n*m;
-//            net.input += l.c*l.h*l.w;
-//        }
-//    } else {
-        int weight_offset = m * k / l.groups;
-        int col_offset = k * n;
-        int output_offset = m * n / l. groups;
-        int j;
-        for(i = 0; i < l.batch; ++i){
-            im2col_cpu(net.input, l.c, l.h, l.w,
-                       l.size, l.stride, l.pad, b);
-            for (j = 0; j<l.groups; j++) {
-                gemm(0, 0,
-                     m / l.groups, n, k,
-                     1, a + weight_offset * j, k,
-                     b + col_offset * j, n,
-                     1, c + output_offset * j, n);
+            if (l.size == 1) {
+                b = im;
+            } else {
+                im2col_cpu(im, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, b); // re-format the input image
             }
-            c += n*m;
-            net.input += l.c*l.h*l.w;
+            gemm(0,0,m,n,k,1,a,k,b,n,1,c,n);  
+            /*
+**  功能：被gemm_cpu()函数调用，实际完成C = ALPHA * A * B + C 矩阵计算，
+**       输出的C也是按行存储（所有行并成一行）
+**  输入： A,B,C   输入矩阵（一维数组格式）
+**        ALPHA   系数
+**        BETA    系数
+**        M       A,C的行数（不做转置）或者A'的行数（做转置），此处A未转置，故为A的行数
+**        N       B,C的列数（不做转置）或者B'的列数（做转置），此处B未转置，故为B的列数
+**        K       A的列数（不做转置）或者A'的列数（做转置），B的行数（不做转置）或者B'的行数（做转置），此处A,B均未转置，故为A的列数、B的行数
+**        lda     A的列数（不做转置）或者A'的行数（做转置），此处A未转置，故为A的列数
+**        ldb     B的列数（不做转置）或者B'的行数（做转置），此处B未转置，故为B的列数
+**        ldc     C的列数
+**  说明1：此函数是用C实现矩阵乘法运算，这部分代码应该是模仿的Caffe中的math_functions.cpp的代码
+**       参考博客：http://www.voidcn.com/blog/thy_2014/article/p-6149690.html
+**       更为详细的注释参见：gemm_cpu()函数的注释
+**  说明2：此函数在gemm_cpu()函数中调用，是其中四种情况之一，A,B都不进行转置
+**       函数名称gemm_nn()中的两个nn分别表示not transpose， not transposezai 
+*/
         }
-//    }
+    }
+
     if(l.batch_normalize){
         forward_batchnorm_layer(l, net);
     } else {
         add_bias(l.output, l.biases, l.batch, l.n, l.out_h*l.out_w);
     }
-//    printf("weights[0] = %f; input[0] = %f; output[0] = %f; l.index = %d\n", l.weights[0], temp, l.output[0], l.index);
 
-    activate_array(l.output, m*n*l.batch, l.activation);
+    activate_array(l.output, l.outputs*l.batch, l.activation);
     if(l.binary || l.xnor) swap_binary(&l);
 }
 
 void backward_convolutional_layer(convolutional_layer l, network net)
 {
-    int i;
-    int m = l.n;
+    int i, j;
+    int m = l.n/l.groups;
     int n = l.size*l.size*l.c/l.groups;
     int k = l.out_w*l.out_h;
 
-    int weight_offset = m * n / l.groups;
-    int col_offset = k * n;
-    int output_offset = m * k / l. groups;
-    int g;
-    //printf("layer m,n,...,output_offset: %d %d %d %d %d %d\n", m, n, k, weight_offset, col_offset, output_offset);
-
-    gradient_array(l.output, m*k*l.batch, l.activation, l.delta);
+    gradient_array(l.output, l.outputs*l.batch, l.activation, l.delta);
 
     if(l.batch_normalize){
         backward_batchnorm_layer(l, net);
@@ -521,37 +518,37 @@ void backward_convolutional_layer(convolutional_layer l, network net)
     }
 
     for(i = 0; i < l.batch; ++i){
-        float *a = l.delta + i*m*k;
-        float *b = net.workspace;
-        float *c = l.weight_updates;
+        for(j = 0; j < l.groups; ++j){
+            float *a = l.delta + (i*l.groups + j)*m*k;
+            float *b = net.workspace;
+            float *c = l.weight_updates + j*l.nweights/l.groups;
 
-        float *im = net.input+i*l.c*l.h*l.w;
+            float *im  = net.input + (i*l.groups + j)*l.c/l.groups*l.h*l.w;
+            float *imd = net.delta + (i*l.groups + j)*l.c/l.groups*l.h*l.w;
 
-        im2col_cpu(im, l.c, l.h, l.w, 
-                l.size, l.stride, l.pad, b);
-        
-        
-        for (g=0; g<l.groups; g++) {
-            gemm(0, 1,
-                 m / l.groups, n,
-                 k, 1, a + output_offset * g, k,
-                 b + col_offset * g, k,
-                 1, c + weight_offset * g, n);
-        }
-        
-        
-
-        if(net.delta){
-            //printf("net.delta exists!");
-            a = l.weights;
-            b = l.delta + i*m*k;
-            c = net.workspace;
-
-            for(g=0; g<l.groups; g++) {
-                gemm(1, 0, n, k, m/l.groups, 1, a + weight_offset * g, n, b + output_offset * g, k, 0, c + col_offset * g, k);
+            if(l.size == 1){
+                b = im;
+            } else {
+                im2col_cpu(im, l.c/l.groups, l.h, l.w, 
+                        l.size, l.stride, l.pad, b);
             }
 
-            col2im_cpu(net.workspace, l.c,  l.h,  l.w,  l.size,  l.stride, l.pad, net.delta+i*l.c*l.h*l.w);
+            gemm(0,1,m,n,k,1,a,k,b,k,1,c,n);
+
+            if (net.delta) {
+                a = l.weights + j*l.nweights/l.groups;
+                b = l.delta + (i*l.groups + j)*m*k;
+                c = net.workspace;
+                if (l.size == 1) {
+                    c = imd;
+                }
+
+                gemm(1,0,n,k,m,1,a,n,b,k,0,c,k);
+
+                if (l.size != 1) {
+                    col2im_cpu(net.workspace, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, imd);
+                }
+            }
         }
     }
 }
@@ -563,7 +560,6 @@ void update_convolutional_layer(convolutional_layer l, update_args a)
     float decay = a.decay;
     int batch = a.batch;
 
-    int size = l.size*l.size*l.c*l.n/l.groups;
     axpy_cpu(l.n, learning_rate/batch, l.bias_updates, 1, l.biases, 1);
     scal_cpu(l.n, momentum, l.bias_updates, 1);
 
@@ -572,9 +568,9 @@ void update_convolutional_layer(convolutional_layer l, update_args a)
         scal_cpu(l.n, momentum, l.scale_updates, 1);
     }
 
-    axpy_cpu(size, -decay*batch, l.weights, 1, l.weight_updates, 1);
-    axpy_cpu(size, learning_rate/batch, l.weight_updates, 1, l.weights, 1);
-    scal_cpu(size, momentum, l.weight_updates, 1);
+    axpy_cpu(l.nweights, -decay*batch, l.weights, 1, l.weight_updates, 1);
+    axpy_cpu(l.nweights, learning_rate/batch, l.weight_updates, 1, l.weights, 1);
+    scal_cpu(l.nweights, momentum, l.weight_updates, 1);
 }
 
 
@@ -582,7 +578,7 @@ image get_convolutional_weight(convolutional_layer l, int i)
 {
     int h = l.size;
     int w = l.size;
-    int c = l.c;
+    int c = l.c/l.groups;
     return float_to_image(w,h,c,l.weights+i*h*w*c);
 }
 
@@ -618,10 +614,10 @@ image *get_weights(convolutional_layer l)
         weights[i] = copy_image(get_convolutional_weight(l, i));
         normalize_image(weights[i]);
         /*
-        char buff[256];
-        sprintf(buff, "filter%d", i);
-        save_image(weights[i], buff);
-        */
+           char buff[256];
+           sprintf(buff, "filter%d", i);
+           save_image(weights[i], buff);
+         */
     }
     //error("hey");
     return weights;

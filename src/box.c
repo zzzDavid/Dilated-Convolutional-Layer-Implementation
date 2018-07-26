@@ -3,9 +3,94 @@
 #include <math.h>
 #include <stdlib.h>
 
+int nms_comparator(const void *pa, const void *pb)
+{
+    detection a = *(detection *)pa;
+    detection b = *(detection *)pb;
+    float diff = 0;
+    if(b.sort_class >= 0){
+        diff = a.prob[b.sort_class] - b.prob[b.sort_class];
+    } else {
+        diff = a.objectness - b.objectness;
+    }
+    if(diff < 0) return 1;
+    else if(diff > 0) return -1;
+    return 0;
+}
+
+void do_nms_obj(detection *dets, int total, int classes, float thresh)
+{
+    int i, j, k;
+    k = total-1;
+    for(i = 0; i <= k; ++i){
+        if(dets[i].objectness == 0){
+            detection swap = dets[i];
+            dets[i] = dets[k];
+            dets[k] = swap;
+            --k;
+            --i;
+        }
+    }
+    total = k+1;
+
+    for(i = 0; i < total; ++i){
+        dets[i].sort_class = -1;
+    }
+
+    qsort(dets, total, sizeof(detection), nms_comparator);
+    for(i = 0; i < total; ++i){
+        if(dets[i].objectness == 0) continue;
+        box a = dets[i].bbox;
+        for(j = i+1; j < total; ++j){
+            if(dets[j].objectness == 0) continue;
+            box b = dets[j].bbox;
+            if (box_iou(a, b) > thresh){
+                dets[j].objectness = 0;
+                for(k = 0; k < classes; ++k){
+                    dets[j].prob[k] = 0;
+                }
+            }
+        }
+    }
+}
+
+
+void do_nms_sort(detection *dets, int total, int classes, float thresh)
+{
+    int i, j, k;
+    k = total-1;
+    for(i = 0; i <= k; ++i){
+        if(dets[i].objectness == 0){
+            detection swap = dets[i];
+            dets[i] = dets[k];
+            dets[k] = swap;
+            --k;
+            --i;
+        }
+    }
+    total = k+1;
+
+    for(k = 0; k < classes; ++k){
+        for(i = 0; i < total; ++i){
+            dets[i].sort_class = k;
+        }
+        qsort(dets, total, sizeof(detection), nms_comparator);
+        for(i = 0; i < total; ++i){
+            if(dets[i].prob[k] == 0) continue;
+            box a = dets[i].bbox;
+            for(j = i+1; j < total; ++j){
+                box b = dets[j].bbox;
+                if (box_iou(a, b) > thresh){
+                    dets[j].prob[k] = 0;
+                }
+            }
+        }
+    }
+}
+
 box float_to_box(float *f, int stride)
 {
-    box b;
+    box b = {0};
     b.x = f[0];
     b.y = f[1*stride];
     b.w = f[2*stride];
@@ -230,271 +315,6 @@ dbox diou(box a, box b)
     return dd;
 }
 
-typedef struct{
-    int index;
-    int class;
-    float **probs;
-} sortable_bbox;
-
-typedef struct {
-    int index;
-    int class;
-    float prob;
-} box_prob_pair;
-
-
-int nms_comparator(const void *pa, const void *pb)
-{
-    sortable_bbox a = *(sortable_bbox *)pa;
-    sortable_bbox b = *(sortable_bbox *)pb;
-    float diff = a.probs[a.index][b.class] - b.probs[b.index][b.class];
-    if(diff < 0) return 1;
-    else if(diff > 0) return -1;
-    return 0;
-}
-
-int nms_comparator_ssd(const void* a, const void* b)
-{
-    return (*(ScoreLabelIndex *)b).score > (*(ScoreLabelIndex *)a).score ? 1: -1;
-}
-
-
-void do_nms_obj(box *boxes, float **probs, int total, int classes, float thresh)
-{
-    int i, j, k;
-    sortable_bbox *s = calloc(total, sizeof(sortable_bbox));
-
-    for(i = 0; i < total; ++i){
-        s[i].index = i;       
-        s[i].class = classes;
-        s[i].probs = probs;
-    }
-
-    qsort(s, total, sizeof(sortable_bbox), nms_comparator);
-    for(i = 0; i < total; ++i){
-        if(probs[s[i].index][classes] == 0) continue;
-        box a = boxes[s[i].index];
-        for(j = i+1; j < total; ++j){
-            box b = boxes[s[j].index];
-            if (box_iou(a, b) > thresh){
-                for(k = 0; k < classes+1; ++k){
-                    probs[s[j].index][k] = 0;
-                }
-            }
-        }
-    }
-    free(s);
-}
-
-float fBBoxSize(const float *bbox, const bool normalized)
-{
-    if (bbox[2] < bbox[0] || bbox[3] < bbox[1]) {
-        return 0.f;
-    } else {
-        const float width = bbox[2] - bbox[0];
-        const float height= bbox[3] - bbox[1];
-        if (normalized) {
-            return width * height;
-        } else {
-            return (width + 1) * (height + 1);
-        }
-    }
-}
-
-
-void fClipBbox(float* bbox, float *clipBox)
-{
-    clipBox[0] = fmaxf(fminf(bbox[0], 1.f), 0.f);
-    clipBox[1] = fmaxf(fminf(bbox[1], 1.f), 0.f);
-    clipBox[2] = fmaxf(fminf(bbox[2], 1.f), 0.f);
-    clipBox[3] = fmaxf(fminf(bbox[3], 1.f), 0.f);
-}
-
-void ClipBbox(const box_b bbox, box_b *clipBox)
-{
-    clipBox->xmin = fmaxf(fminf(bbox.xmin, 1.f), 0.f);
-    clipBox->ymin = fmaxf(fminf(bbox.ymin, 1.f), 0.f);
-    clipBox->xmax = fmaxf(fminf(bbox.xmax, 1.f), 0.f);
-    clipBox->ymax = fmaxf(fminf(bbox.ymax, 1.f), 0.f);
-}
-
-box_b intersectBBox(const box_b bbox1, const box_b bbox2)
-{
-    box_b intersect_bbox;
-    if (bbox2.xmin > bbox1.xmax || bbox2.xmax < bbox1.xmin ||
-        bbox2.ymin > bbox1.ymax || bbox2.ymax < bbox1.ymin) {
-        intersect_bbox.xmin = 0;
-        intersect_bbox.ymin = 0;
-        intersect_bbox.xmax = 0;
-        intersect_bbox.ymax = 0;
-    } else {
-        intersect_bbox.xmin = fmaxf(bbox1.xmin, bbox2.xmin);
-        intersect_bbox.ymin = fmaxf(bbox1.ymin, bbox2.ymin);
-        intersect_bbox.xmax = fminf(bbox1.xmax, bbox2.xmax);
-        intersect_bbox.ymax = fminf(bbox1.ymax, bbox2.ymax);
-    }
-    return intersect_bbox;
-}
-
-float BBoxSize(const box_b bbox, const bool normalized)
-{
-    if (bbox.xmax < bbox.xmin || bbox.ymax < bbox.ymin) {
-        return 0;
-    } else {
-        float width = bbox.xmax - bbox.xmin;
-        float height= bbox.ymax - bbox.ymin;
-        if (normalized) {
-            return width * height;
-        } else {
-            return (width + 1) * (height + 1);
-        }
-    }
-}
-
-
-float jaccardOverlap(const box_b bbox1, box_b bbox2, const bool normalized)
-{
-    box_b intersect_bbox = intersectBBox(bbox1, bbox2);
-    float intersect_w;
-    float intersect_h;
-    if (normalized) {
-        intersect_w = intersect_bbox.xmax - intersect_bbox.xmin;
-        intersect_h = intersect_bbox.ymax - intersect_bbox.ymin;
-    } else {
-        intersect_w = intersect_bbox.xmax - intersect_bbox.xmin + 1;
-        intersect_h = intersect_bbox.ymax - intersect_bbox.ymin + 1;
-    }
-    
-    if (intersect_w > 0 && intersect_h > 0) {
-        float intersect_size = intersect_w * intersect_h;
-        float bbox1_size = BBoxSize(bbox1, normalized);
-        float bbox2_size = BBoxSize(bbox2, normalized);
-        return intersect_size / (bbox1_size + bbox2_size - intersect_size);
-    } else {
-        return 0.;
-    }
-}
-
-
-float fJaccardOverlap(const float *bbox1, const float *bbox2)
-{
-    if (bbox2[0] > bbox1[2] || bbox2[2] < bbox1[0] ||
-        bbox2[1] > bbox1[3] || bbox2[3] < bbox1[1]) {
-        return 0.f;
-    } else {
-        const float inter_xmin = fmaxf(bbox1[0], bbox2[0]);
-        const float inter_ymin = fmaxf(bbox1[1], bbox2[1]);
-        const float inter_xmax = fmaxf(bbox1[2], bbox2[2]);
-        const float inter_ymax = fmaxf(bbox1[3], bbox2[3]);
-        
-        const float inter_width = inter_xmax - inter_xmin;
-        const float inter_height = inter_ymax - inter_ymin;
-        const float inter_size = inter_width * inter_height;
-        
-        const float bbox1_size = fBBoxSize(bbox1, true);
-        const float bbox2_size = fBBoxSize(bbox2, true);
-        return inter_size / (bbox1_size + bbox2_size - inter_size);
-    }
-}
-
-int do_nms_obj_ssd(box_b *boxes, float **probs, int total, int classes, float nms, ScoreLabelIndex *sli, int top_k, int keep_top_k, float eta)
-{
-    int total_num = 0;
-    int i, j;
-    for(i = 0; i < classes; ++i){
-        if (i == 0) {
-            continue;
-        }
-        float *scores = probs[i];
-        
-        int top_n = top_k > total ? total : top_k;
-        ScoreLabelIndex *tmp_sli = (ScoreLabelIndex*)malloc(top_n * sizeof(ScoreLabelIndex));
-        ScoreLabelIndex *s_in_class = (ScoreLabelIndex*)malloc(total * sizeof(ScoreLabelIndex));
-        
-        for (j = 0; j <total; ++j) {
-                s_in_class[j].index = j;
-                s_in_class[j].label = i;
-                s_in_class[j].score = scores[j];
-            
-        }
-        
-        qsort(s_in_class, total, sizeof(ScoreLabelIndex), nms_comparator_ssd);
-        
-        
-        for (j = 0; j < top_n; ++j) {
-            tmp_sli[j] = s_in_class[j];
-        }
-        
-        int kept_n = 0;
-        
-        float adaptive_threshold = nms;
-        
-        for (j = 0; j < top_n; ++j) {
-            int idx = s_in_class[j].index;
-            bool keep = true;
-            int ii = 0;
-            for (ii = 0; ii < kept_n; ++ii) {
-                if (keep) {
-                    int kept_index = tmp_sli[ii].index;
-                    float overlap = jaccardOverlap(boxes[idx], boxes[kept_index], true);
-                    keep = (overlap <= adaptive_threshold);
-                } else {
-                    break;
-                }
-            }
-            
-            if (keep) {
-                tmp_sli[kept_n] = s_in_class[j];
-                kept_n ++;
-                sli[total_num] = s_in_class[j];
-                total_num ++;
-            }
-            
-            if (keep && eta < 1.f && adaptive_threshold > 0.5f) {
-                adaptive_threshold *= eta;
-            }
-        }
-        free(s_in_class);
-        free(tmp_sli);
-    }
-    qsort(sli, total_num, sizeof(ScoreLabelIndex), nms_comparator_ssd);
-    total_num = (total_num > keep_top_k) ? keep_top_k : total_num;
-    
-    
-    return total_num;
-}
-
-
-
-void do_nms_sort(box *boxes, float **probs, int total, int classes, float thresh)
-{
-    int i, j, k;
-    sortable_bbox *s = calloc(total, sizeof(sortable_bbox));
-
-    for(i = 0; i < total; ++i){
-        s[i].index = i;       
-        s[i].class = 0;
-        s[i].probs = probs;
-    }
-
-    for(k = 0; k < classes; ++k){
-        for(i = 0; i < total; ++i){
-            s[i].class = k;
-        }
-        qsort(s, total, sizeof(sortable_bbox), nms_comparator);
-        for(i = 0; i < total; ++i){
-            if(probs[s[i].index][k] == 0) continue;
-            box a = boxes[s[i].index];
-            for(j = i+1; j < total; ++j){
-                box b = boxes[s[j].index];
-                if (box_iou(a, b) > thresh){
-                    probs[s[j].index][k] = 0;
-                }
-            }
-        }
-    }
-    free(s);
-}
 
 void do_nms(box *boxes, float **probs, int total, int classes, float thresh)
 {

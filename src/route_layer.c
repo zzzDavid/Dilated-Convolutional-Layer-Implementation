@@ -6,7 +6,7 @@
 
 route_layer make_route_layer(int batch, int n, int *input_layers, int *input_sizes)
 {
-    fprintf(stderr,"route	input:");
+    fprintf(stderr,"route ");
     route_layer l = {0};
     l.type = ROUTE;
     l.batch = batch;
@@ -19,11 +19,11 @@ route_layer make_route_layer(int batch, int n, int *input_layers, int *input_siz
         fprintf(stderr," %d", input_layers[i]);
         outputs += input_sizes[i];
     }
-    fprintf(stderr, "\t");
+    fprintf(stderr, "\n");
     l.outputs = outputs;
     l.inputs = outputs;
     l.delta =  calloc(outputs*batch, sizeof(float));
-    l.output = calloc(outputs*batch, sizeof(float));
+    l.output = calloc(outputs*batch, sizeof(float));;
 
     l.forward = forward_route_layer;
     l.backward = backward_route_layer;

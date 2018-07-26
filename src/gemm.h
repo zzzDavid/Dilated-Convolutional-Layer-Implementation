@@ -30,14 +30,5 @@ void gemm_gpu(int TA, int TB, int M, int N, int K, float ALPHA,
         float *B, int ldb,
         float BETA,
         float *C, int ldc);
-
-void group_gemm_gpu(int TA, int TB, int M, int N, int K, float ALPHA,
-                    float *A_gpu, int lda, int offsetA,
-                    float *B_gpu, int ldb, int offset_B,
-                    float BETA,
-                    float *C_gpu, int ldc, int offset_C, int group);
-
-void ztSgmvStrideBatched(const float * __restrict__ x_gpu, int K,
-		const float * __restrict__ A_gpu, int N, int groups, float * __restrict__ C_gpu);
 #endif
 #endif

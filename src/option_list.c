@@ -3,7 +3,6 @@
 #include <string.h>
 #include "option_list.h"
 #include "utils.h"
-#include <assert.h>
 
 list *read_data_cfg(char *filename)
 {
@@ -64,20 +63,7 @@ int read_option(char *s, list *options)
     }
     if(i == len-1) return 0;
     char *key = s;
-    /*
-    size_t val_len = strlen(val);
-
-    char *new_val = (char*)malloc((val_len+1) * sizeof(char));
-    size_t k =0;
-    for (i=0; i<val_len; ++i) {
-        if (val[i] != '[' || val[i] != ']' || val[i] != '\'' || val[i] != '\'') {
-            new_val[k] = val[i];
-            k++;
-        }
-    }
-    */
     option_insert(options, key, val);
-//    printf("option insert: %s = %s\n", key, val);
     return 1;
 }
 
@@ -107,7 +93,6 @@ char *option_find(list *l, char *key)
     node *n = l->front;
     while(n){
         kvp *p = (kvp *)n->val;
-        assert(p->key != NULL);
         if(strcmp(p->key, key) == 0){
             p->used = 1;
             return p->val;
