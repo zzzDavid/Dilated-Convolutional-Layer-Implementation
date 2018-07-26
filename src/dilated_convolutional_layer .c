@@ -1,4 +1,4 @@
-#include "convolutional_layer.h"
+#include "dilated_convolutional_layer.h"
 #include "utils.h"
 #include "batchnorm_layer.h"
 #include "im2col.h"
@@ -12,7 +12,7 @@
 #include "xnor_layer.h"
 #endif
 
-void swap_binary(convolutional_layer *l)
+void swap_binary(dilated_convolutional_layer *l)
 {
     float *swap = l->weights;
     l->weights = l->binary_weights;
@@ -67,26 +67,23 @@ void binarize_input(float *input, int n, int size, float *binary)
 **  根据输入图像的高度(h)，两边补0的个数(pad)，卷积核尺寸(size)以及跨度(stride)计算输出的特征图的高度
 **  输入：l    卷积层，包含该卷积层的所有参数，实际这里没有必要输入整个l，因为只需要到其中的四个参数而已
 **  输出：int类型，输出图像的高度
-**  说明：这个函数的实现应该可以进一步改善一下，虽然这个函数只是在最初构建网络时调用一次，之后就不调用了，不怎么影响性能，
-**       但输入整个l实在不妥（l比较大，按值传递复制过程比较冗长），要么就只输入用到的四个参数，要么传入l的指针，
-**       并且不需要返回值了，直接在函数内部为l.out_h赋值
 */
-int dilated_conv_out_height(convolutional_layer *l)
+int dilated_conv_out_height(dilated_convolutional_layer *l)
 {
     return (l->h + 2*l->pad - l->size) / l->stride + 1;
 }
 
-int dilated_conv_out_width(convolutional_layer *l)
+int dilated_conv_out_width(dilated_convolutional_layer *l)
 {
     return (l->w + 2*l->pad - l->size) / l->stride + 1;
 }
 
-image get_convolutional_image(convolutional_layer l)
+image get_convolutional_image(dilated_convolutional_layer l)
 {
     return float_to_image(l.out_w,l.out_h,l.out_c,l.output);
 }
 
-image get_convolutional_delta(convolutional_layer l)
+image get_convolutional_delta(dilated_convolutional_layer l)
 {
     return float_to_image(l.out_w,l.out_h,l.out_c,l.delta);
 }
@@ -181,10 +178,10 @@ void cudnn_convolutional_setup(layer *l)
 #endif
 #endif
 
-convolutional_layer make_convolutional_layer(int batch, int h, int w, int c, int n, int groups, int size, int stride, int padding, ACTIVATION activation, int batch_normalize, int binary, int xnor, int adam)
+dilated_convolutional_layer make_convolutional_layer(int batch, int h, int w, int c, int n, int groups, int size, int stride, int padding, ACTIVATION activation, int batch_normalize, int binary, int xnor, int adam)
 {
     int i;
-    convolutional_layer l = {0};
+    dilated_convolutional_layer l = {0};
     l.type = CONVOLUTIONAL;
 
     l.groups = groups;
@@ -335,7 +332,7 @@ convolutional_layer make_convolutional_layer(int batch, int h, int w, int c, int
     return l;
 }
 
-void denormalize_convolutional_layer(convolutional_layer l)
+void denormalize_convolutional_layer(dilated_convolutional_layer l)
 {
     int i, j;
     for(i = 0; i < l.n; ++i){
@@ -353,7 +350,7 @@ void denormalize_convolutional_layer(convolutional_layer l)
 /*
 void test_convolutional_layer()
 {
-    convolutional_layer l = make_convolutional_layer(1, 5, 5, 3, 2, 5, 2, 1, LEAKY, 1, 0, 0, 0);
+    dilated_convolutional_layer l = make_convolutional_layer(1, 5, 5, 3, 2, 5, 2, 1, LEAKY, 1, 0, 0, 0);
     l.batch_normalize = 1;
     float data[] = {1,1,1,1,1,
         1,1,1,1,1,
@@ -375,7 +372,7 @@ void test_convolutional_layer()
 }
 */
 
-void resize_convolutional_layer(convolutional_layer *l, int w, int h)
+void resize_convolutional_layer(dilated_convolutional_layer *l, int w, int h)
 {
     l->w = w;
     l->h = h;
@@ -450,7 +447,7 @@ void backward_bias(float *bias_updates, float *delta, int batch, int n, int size
     }
 }
 
-void forward_convolutional_layer(convolutional_layer l, network net)
+void forward_convolutional_layer(dilated_convolutional_layer l, network net)
 {
     int i, j;
 
@@ -463,24 +460,28 @@ void forward_convolutional_layer(convolutional_layer l, network net)
         net.input = l.binary_input;
     }
 
-    int m = l.n/l.groups;                                // kernel's channel (per group) = number of rows in weight matrix
-    int k = l.size*l.size*l.c/l.groups;                  // number of columns in weight matrix
-    int n = l.out_w*l.out_h;                             // number of columns in output matrix
+    int m = l.n/l.groups;                                // 每组的kernel个数
+    int k = l.size*l.size*l.c/l.groups;                  // 每组kernel中元素的个数
+    int n = l.out_w*l.out_h;                             // 输出图像的像素个数
     for(i = 0; i < l.batch; ++i){
+    //大循环，batch是一组图片，循环内每次对一张图片卷积
         for(j = 0; j < l.groups; ++j){
-            float *a = l.weights + j*l.nweights/l.groups;   // weight matrix
+        //小循环，每次使用一组weights对一张图像进行卷积
+            float *a = l.weights + j*l.nweights/l.groups;   // 第j组第一个卷积核的开头元素
             float *b = net.workspace;                       // re-formated image data
-            float *c = l.output + (i*l.groups + j)*n*m;     // output matrix
+            float *c = l.output + (i*l.groups + j)*n*m;     // 第i个图像在和第j组kernel卷积时输出元素的存放位置
             float *im =  net.input + (i*l.groups + j)*l.c/l.groups*l.h*l.w;    // input data
 
             if (l.size == 1) {
                 b = im;
             } else {
                 im2col_cpu(im, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, b); // re-format the input image
+                //im2col_cpu(float* data_im,int channels,  int height,  int width, int ksize,  int stride, int pad, float* data_col) 
             }
-            gemm(0,0,m,n,k,1,a,k,b,n,1,c,n);  
+            gemm(0,0,m,n,k,1,a,k,b,n,1,c,n);
+            //gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA, float *A, int lda, float *B, int ldb, float BETA,float *C, int ldc)  
             /*
-**  功能：被gemm_cpu()函数调用，实际完成C = ALPHA * A * B + C 矩阵计算，
+**  功能：调用gemm_cpu()，实际完成C = ALPHA*A*B + C*BETA 矩阵计算，
 **       输出的C也是按行存储（所有行并成一行）
 **  输入： A,B,C   输入矩阵（一维数组格式）
 **        ALPHA   系数
@@ -510,7 +511,7 @@ void forward_convolutional_layer(convolutional_layer l, network net)
     if(l.binary || l.xnor) swap_binary(&l);
 }
 
-void backward_convolutional_layer(convolutional_layer l, network net)
+void backward_convolutional_layer(dilated_convolutional_layer l, network net)
 {
     int i, j;
     int m = l.n/l.groups;
@@ -561,7 +562,7 @@ void backward_convolutional_layer(convolutional_layer l, network net)
     }
 }
 
-void update_convolutional_layer(convolutional_layer l, update_args a)
+void update_convolutional_layer(dilated_convolutional_layer l, update_args a)
 {
     float learning_rate = a.learning_rate*l.learning_rate_scale;
     float momentum = a.momentum;
@@ -582,7 +583,7 @@ void update_convolutional_layer(convolutional_layer l, update_args a)
 }
 
 
-image get_convolutional_weight(convolutional_layer l, int i)
+image get_convolutional_weight(dilated_convolutional_layer l, int i)
 {
     int h = l.size;
     int w = l.size;
@@ -590,7 +591,7 @@ image get_convolutional_weight(convolutional_layer l, int i)
     return float_to_image(w,h,c,l.weights+i*h*w*c);
 }
 
-void rgbgr_weights(convolutional_layer l)
+void rgbgr_weights(dilated_convolutional_layer l)
 {
     int i;
     for(i = 0; i < l.n; ++i){
@@ -601,7 +602,7 @@ void rgbgr_weights(convolutional_layer l)
     }
 }
 
-void rescale_weights(convolutional_layer l, float scale, float trans)
+void rescale_weights(dilated_convolutional_layer l, float scale, float trans)
 {
     int i;
     for(i = 0; i < l.n; ++i){
@@ -614,7 +615,7 @@ void rescale_weights(convolutional_layer l, float scale, float trans)
     }
 }
 
-image *get_weights(convolutional_layer l)
+image *get_weights(dilated_convolutional_layer l)
 {
     image *weights = calloc(l.n, sizeof(image));
     int i;
@@ -631,7 +632,7 @@ image *get_weights(convolutional_layer l)
     return weights;
 }
 
-image *visualize_convolutional_layer(convolutional_layer l, char *window, image *prev_weights)
+image *visualize_convolutional_layer(dilated_convolutional_layer l, char *window, image *prev_weights)
 {
     image *single_weights = get_weights(l);
     show_images(single_weights, l.n, window);

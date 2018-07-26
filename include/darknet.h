@@ -132,23 +132,40 @@ struct layer{
     int flipped;
     int inputs;                 // 一张输入图片所含的元素个数（一般在各网络层构建函数中赋值，比如make_connected_layer()），第一层的值等于l.h*l.w*l.c，
                                 // 之后的每一层都是由上一层的输出自动推算得到的（参见parse_network_cfg()，在构建每一层后，会更新params.inputs为上一层的l.outputs）
-    int outputs;
+    int outputs;                // 该层对应一张输入图片的输出元素个数（一般在各网络层构建函数中赋值，比如make_connected_layer()）
+                                // 对于一些网络，可由输入图片的尺寸及相关参数计算出，比如卷积层，可以通过输入尺寸以及跨度、核大小计算出；
+                                // 对于另一些尺寸，则需要通过网络配置文件指定，如未指定，取默认值1，比如全连接层（见parse_connected()函数）
     int nweights;
     int nbiases;
     int extra;
-    int truths;
-    int h,w,c;
-    int out_h, out_w, out_c;
-    int n;
-    int max_boxes;
-    int groups;
-    int size;
+    int truths;                 ///< 根据region_layer.c判断，这个变量表示一张图片含有的真实值的个数，对于检测模型来说，一个真实的标签含有5个值，
+                                ///< 包括类型对应的编号以及定位矩形框用到的w,h,x,y四个参数，且在darknet中，固定每张图片最大处理30个矩形框（可查看max_boxes参数），
+                                ///< 因此，在region_layer.c的make_region_layer()函数中，赋值为30*5
+    int h,w,c;                  // 该层输入图片的高、宽、通道数（一般在各网络层构建函数中赋值，比如make_connected_layer()），
+                                // 第一层网络的h,w,c就是网络初始能够的接收的图片尺寸，而后每一层的h,w,c都与自动匹配上一层相应的输出参数，
+                                // 不再需要配置文件指定（参见parse_network_cfg()，在构建每一层后，会更新params.h,params.w,params.c及params.inputs为上一层相应的输出参数），
+                                // 对于全连接层，h,w直接置为1,c置为l.inputs（参见make_connected_layer()）
+
+    int out_h, out_w, out_c;    // 该层输出图片的高、宽、通道数（一般在各网络层构建函数中赋值，比如make_connected_layer()），
+                                // 对于卷积层，可由上面的h,w,c以及卷积核尺寸、跨度计算出；对于全连接层，out_h,out_w的值直接置为1,
+                                // out_c直接置为l.outputs（参见make_connected_layer()）
+
+    int n;                      // 对于卷积层，该参数表示卷积核个数，等于out_c，其值由网络配置文件指定；对于region_layerc层，该参数等于配置文件中的num值
+                                // (该参数通过make_region_layer()函数赋值，而在parser.c中调用的make_region_layer()函数)，
+                                // 可以在darknet/cfg文件夹下执行命令：grep num *.cfg便可以搜索出所有设置了num参数的网络，这里面包括yolo.cfg等，其值有
+                                // 设定为3,5,2的，该参数就是Yolo论文中的B，也就是一个cell中预测多少个box。
+    int max_boxes;              /// 每张图片最多含有的标签矩形框数（参看：data.c中的load_data_detection()，其输入参数boxes就是指这个参数），
+                                /// 什么意思呢？就是每张图片中最多打了max_boxes个标签物体，模型预测过程中，可能会预测出很多的物体，但实际上，
+                                /// 图片中打上标签的真正存在的物体最多就max_boxes个，预测多出来的肯定存在false positive，需要滤出与筛选，
+    int groups;                 //这是 grouped convolution方法，将卷积核的channel分为几个组，分别进行卷积再合并，group为组数目
+    int size;                   // 核尺寸（比如卷积核，池化核等）
     int side;
     int stride;
     int reverse;
     int flatten;
     int spatial;
-    int pad;
+    int pad;                     // 该层对输入数据四周的补0长度（现在发现在卷积层，最大池化层中有用到该参数），一般在构建具体网络层时赋值（比如make_maxpool_layer()中）
+    int dilated_rate;            // 扩张卷积的扩张度
     int sqrt;
     int flip;
     int index;
@@ -327,9 +344,11 @@ struct layer{
     struct layer *ug;
     struct layer *wg;
 
-    tree *softmax_tree;
+    tree *softmax_tree;             // softmax层用到的一个参数，不过这个参数似乎并不常见，很多用到softmax层的网络并没用使用这个参数，目前仅发现darknet9000.cfg中使用了该参数，如果未用到该参数，其值为NULL，如果用到了则会在parse_softmax()中赋值，
+                                    // 目前个人的初步猜测是利用该参数来组织标签数据，以方便访问
 
-    size_t workspace_size;
+    size_t workspace_size;          // net.workspace的元素个数，为所有层中最大的l.out_h*l.out_w*l.size*l.size*l.c（在make_convolutional_layer()计算得到workspace_size的大小，在parse_network_cfg()中动态分配内存，此值对应未使用gpu时的情况）
+
 
 #ifdef GPU
     int *indexes_gpu;
