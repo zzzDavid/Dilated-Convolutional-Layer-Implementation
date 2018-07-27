@@ -7,7 +7,7 @@ extern "C" {
 #include "batchnorm_layer.h"
 #include "gemm.h"
 #include "blas.h"
-#include "im2col.h"
+#include "im2col_dilated.h"
 #include "col2im.h"
 #include "utils.h"
 #include "cuda.h"
@@ -116,7 +116,7 @@ void forward_convolutional_layer_gpu(convolutional_layer l, network net)
             if (l.size == 1){
                 b = im;
             } else {
-                im2col_gpu(im, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, b);
+                im2col_dilated_gpu(im, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, b);
             }
             gemm_gpu(0,0,m,n,k,1,a,k,b,n,1,c,n);
         }
@@ -243,7 +243,7 @@ void backward_convolutional_layer_gpu(convolutional_layer l, network net)
             float *im  = net.input_gpu+(i*l.groups + j)*l.c/l.groups*l.h*l.w;
             float *imd = net.delta_gpu+(i*l.groups + j)*l.c/l.groups*l.h*l.w;
 
-            im2col_gpu(im, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, b);
+            im2col_dilated_gpu(im, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, b);
             gemm_gpu(0,1,m,n,k,1,a,k,b,k,1,c,n);
 
             if (net.delta_gpu) {

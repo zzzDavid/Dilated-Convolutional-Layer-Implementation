@@ -1,7 +1,7 @@
 #include "dilated_convolutional_layer.h"
 #include "utils.h"
 #include "batchnorm_layer.h"
-#include "im2col.h"
+#include "im2col_dilated.h"
 #include "col2im.h"
 #include "blas.h"
 #include "gemm.h"
@@ -475,8 +475,10 @@ void forward_dilated_conv_layer(dilated_convolutional_layer l, network net)
             if (l.size == 1) {
                 b = im;
             } else {
-                im2col_cpu(im, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, b); // re-format the input image
+                im2col_dilated_cpu(im, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, b, 3); // re-format the input image
                 //im2col_cpu(float* data_im,int channels,  int height,  int width, int ksize,  int stride, int pad, float* data_col) 
+                //TODO: dilate rate应该是在make_dilated_convolutional_layer的时候指定，这就要修改make_dilated_convolutional_layer，在.cfg中增加一个参数，修改parse等等。
+                // 暂时想到这些，这里先指定为3，试一下效果
             }
             gemm(0,0,m,n,k,1,a,k,b,n,1,c,n);
             //gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA, float *A, int lda, float *B, int ldb, float BETA,float *C, int ldc)  
