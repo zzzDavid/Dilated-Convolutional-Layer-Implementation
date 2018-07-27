@@ -130,6 +130,8 @@ char *get_layer_string(LAYER_TYPE a)
             return "local";
         case DECONVOLUTIONAL:
             return "deconvolutional";
+        case DILATED_CONVOLUTIONAL:
+            return "dilated_convolutional";
         case CONNECTED:
             return "connected";
         case RNN:

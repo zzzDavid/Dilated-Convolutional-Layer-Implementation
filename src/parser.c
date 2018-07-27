@@ -798,6 +798,8 @@ network *parse_network_cfg(char *filename)
             l = parse_convolutional(options, params);
         }else if(lt == DECONVOLUTIONAL){
             l = parse_deconvolutional(options, params);
+        }else if(lt == DILATED_CONVOLUTIONAL){
+            l = parse_dilated_convolutional(options, params);
         }else if(lt == LOCAL){
             l = parse_local(options, params);
         }else if(lt == ACTIVE){
