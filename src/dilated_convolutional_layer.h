@@ -30,14 +30,9 @@ void resize_dilated_conv_layer(dilated_convolutional_layer *layer, int w, int h)
 void forward_dilated_conv_layer(const dilated_convolutional_layer layer, network net);
 void update_dilated_conv_layer(dilated_convolutional_layer layer, update_args a);
 image *visualize_dilated_conv_layer(dilated_convolutional_layer layer, char *window, image *prev_weights);
-void binarize_weights(float *weights, int n, int size, float *binary);
-void swap_binary(dilated_convolutional_layer *l);
-void binarize_weights2(float *weights, int n, int size, char *binary, float *scales);
 
 void backward_dilated_conv_layer(dilated_convolutional_layer layer, network net);
 
-void add_bias(float *output, float *biases, int batch, int n, int size);
-void backward_bias(float *bias_updates, float *delta, int batch, int n, int size);
 
 image get_dilated_conv_image(dilated_convolutional_layer layer);
 image get_dilated_conv_delta(dilated_convolutional_layer layer);

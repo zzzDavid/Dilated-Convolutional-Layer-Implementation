@@ -1,4 +1,5 @@
 #include "dilated_convolutional_layer.h"
+#include "convolutional_layer.h"
 #include "utils.h"
 #include "batchnorm_layer.h"
 #include "im2col_dilated.h"
@@ -8,60 +9,6 @@
 #include <stdio.h>
 #include <time.h>
 
-#ifdef AI2
-#include "xnor_layer.h"
-#endif
-
-void swap_binary(dilated_convolutional_layer *l)
-{
-    float *swap = l->weights;
-    l->weights = l->binary_weights;
-    l->binary_weights = swap;
-
-#ifdef GPU
-    swap = l->weights_gpu;
-    l->weights_gpu = l->binary_weights_gpu;
-    l->binary_weights_gpu = swap;
-#endif
-}
-
-void binarize_weights(float *weights, int n, int size, float *binary)
-{
-    int i, f;
-    for(f = 0; f < n; ++f){
-        float mean = 0;
-        for(i = 0; i < size; ++i){
-            mean += fabs(weights[f*size + i]);
-        }
-        mean = mean / size;
-        for(i = 0; i < size; ++i){
-            binary[f*size + i] = (weights[f*size + i] > 0) ? mean : -mean;
-        }
-    }
-}
-
-void binarize_cpu(float *input, int n, float *binary)
-{
-    int i;
-    for(i = 0; i < n; ++i){
-        binary[i] = (input[i] > 0) ? 1 : -1;
-    }
-}
-
-void binarize_input(float *input, int n, int size, float *binary)
-{
-    int i, s;
-    for(s = 0; s < size; ++s){
-        float mean = 0;
-        for(i = 0; i < n; ++i){
-            mean += fabs(input[i*size + s]);
-        }
-        mean = mean / n;
-        for(i = 0; i < n; ++i){
-            binary[i*size + s] = (input[i*size + s] > 0) ? mean : -mean;
-        }
-    }
-}
 
 /*
 **  根据输入图像的高度(h)，两边补0的个数(pad)，卷积核尺寸(size)以及跨度(stride)计算输出的特征图的高度
@@ -413,39 +360,6 @@ void resize_dilated_conv_layer(dilated_convolutional_layer *l, int w, int h)
     l->workspace_size = get_workspace_size(*l);
 }
 
-void add_bias(float *output, float *biases, int batch, int n, int size)
-{
-    int i,j,b;
-    for(b = 0; b < batch; ++b){
-        for(i = 0; i < n; ++i){
-            for(j = 0; j < size; ++j){
-                output[(b*n + i)*size + j] += biases[i];
-            }
-        }
-    }
-}
-
-void scale_bias(float *output, float *scales, int batch, int n, int size)
-{
-    int i,j,b;
-    for(b = 0; b < batch; ++b){
-        for(i = 0; i < n; ++i){
-            for(j = 0; j < size; ++j){
-                output[(b*n + i)*size + j] *= scales[i];
-            }
-        }
-    }
-}
-
-void backward_bias(float *bias_updates, float *delta, int batch, int n, int size)
-{
-    int i,b;
-    for(b = 0; b < batch; ++b){
-        for(i = 0; i < n; ++i){
-            bias_updates[i] += sum_array(delta+size*(i+b*n), size);
-        }
-    }
-}
 
 void forward_dilated_conv_layer(dilated_convolutional_layer l, network net)
 {
@@ -591,61 +505,5 @@ image get_dilated_conv_weight(dilated_convolutional_layer l, int i)
     int w = l.size;
     int c = l.c/l.groups;
     return float_to_image(w,h,c,l.weights+i*h*w*c);
-}
-
-void rgbgr_weights(dilated_convolutional_layer l)
-{
-    int i;
-    for(i = 0; i < l.n; ++i){
-        image im = get_dilated_conv_weight(l, i);
-        if (im.c == 3) {
-            rgbgr_image(im);
-        }
-    }
-}
-
-void rescale_weights(dilated_convolutional_layer l, float scale, float trans)
-{
-    int i;
-    for(i = 0; i < l.n; ++i){
-        image im = get_dilated_conv_weight(l, i);
-        if (im.c == 3) {
-            scale_image(im, scale);
-            float sum = sum_array(im.data, im.w*im.h*im.c);
-            l.biases[i] += sum*trans;
-        }
-    }
-}
-
-image *get_weights(dilated_convolutional_layer l)
-{
-    image *weights = calloc(l.n, sizeof(image));
-    int i;
-    for(i = 0; i < l.n; ++i){
-        weights[i] = copy_image(get_dilated_conv_weight(l, i));
-        normalize_image(weights[i]);
-        /*
-           char buff[256];
-           sprintf(buff, "filter%d", i);
-           save_image(weights[i], buff);
-         */
-    }
-    //error("hey");
-    return weights;
-}
-
-image *visualize_dilated_conv_layer(dilated_convolutional_layer l, char *window, image *prev_weights)
-{
-    image *single_weights = get_weights(l);
-    show_images(single_weights, l.n, window);
-
-    image delta = get_dilated_conv_image(l);
-    image dc = collapse_image_layers(delta, 1);
-    char buff[256];
-    sprintf(buff, "%s: Output", window);
-    //show_image(dc, buff);
-    //save_image(dc, buff);
-    free_image(dc);
-    return single_weights;
 }
 
