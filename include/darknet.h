@@ -63,6 +63,7 @@ typedef enum{
 
 typedef enum {
     CONVOLUTIONAL,
+    DILATED_CONVOLUTIONAL,
     DECONVOLUTIONAL,
     CONNECTED,
     MAXPOOL,

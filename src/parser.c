@@ -13,6 +13,7 @@
 #include "connected_layer.h"
 #include "deconvolutional_layer.h"
 #include "convolutional_layer.h"
+#include "dilated_convolutional_layer.h"
 #include "cost_layer.h"
 #include "crnn_layer.h"
 #include "crop_layer.h"
@@ -55,6 +56,8 @@ LAYER_TYPE string_to_layer_type(char * type)
     if (strcmp(type, "[local]")==0) return LOCAL;
     if (strcmp(type, "[conv]")==0
             || strcmp(type, "[convolutional]")==0) return CONVOLUTIONAL;
+     if (strcmp(type, "[diconv]")==0
+            || strcmp(type, "[dilated_convolutional]")==0) return DILATED_CONVOLUTIONAL;
     if (strcmp(type, "[deconv]")==0
             || strcmp(type, "[deconvolutional]")==0) return DECONVOLUTIONAL;
     if (strcmp(type, "[activation]")==0) return ACTIVE;
@@ -198,6 +201,36 @@ convolutional_layer parse_convolutional(list *options, size_params params)
     int xnor = option_find_int_quiet(options, "xnor", 0);
 
     convolutional_layer layer = make_convolutional_layer(batch,h,w,c,n,groups,size,stride,padding,activation, batch_normalize, binary, xnor, params.net->adam);
+    layer.flipped = option_find_int_quiet(options, "flipped", 0);
+    layer.dot = option_find_float_quiet(options, "dot", 0);
+
+    return layer;
+}
+
+dilated_convolutional_layer parse_dilated_convolutional(list *options, size_params params)
+{
+    int n = option_find_int(options, "filters",1);
+    int size = option_find_int(options, "size",1);
+    int stride = option_find_int(options, "stride",1);
+    int pad = option_find_int_quiet(options, "pad",0);
+    int padding = option_find_int_quiet(options, "padding",0);
+    int groups = option_find_int_quiet(options, "groups", 1);
+    if(pad) padding = size/2;
+
+    char *activation_s = option_find_str(options, "activation", "logistic");
+    ACTIVATION activation = get_activation(activation_s);
+
+    int batch,h,w,c;
+    h = params.h;
+    w = params.w;
+    c = params.c;
+    batch=params.batch;
+    if(!(h && w && c)) error("Layer before dilated convolutional layer must output image.");
+    int batch_normalize = option_find_int_quiet(options, "batch_normalize", 0);
+    int binary = option_find_int_quiet(options, "binary", 0);
+    int xnor = option_find_int_quiet(options, "xnor", 0);
+
+    dilated_convolutional_layer layer = make_dilated_conv_layer(batch,h,w,c,n,groups,size,stride,padding,activation, batch_normalize, binary, xnor, params.net->adam);
     layer.flipped = option_find_int_quiet(options, "flipped", 0);
     layer.dot = option_find_float_quiet(options, "dot", 0);
 
