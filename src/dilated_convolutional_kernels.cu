@@ -13,20 +13,20 @@ extern "C" {
 #include "cuda.h"
 }
 
-__global__ void binarize_kernel2(float *x, int n, float *binary)
+__global__ void binarize_kernel(float *x, int n, float *binary)
 {
     int i = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
     if (i >= n) return;
     binary[i] = (x[i] >= 0) ? 1 : -1;
 }
 
-void binarize_gpu2(float *x, int n, float *binary)
+void binarize_gpu(float *x, int n, float *binary)
 {
     binarize_kernel<<<cuda_gridsize(n), BLOCK>>>(x, n, binary);
     check_error(cudaPeekAtLastError());
 }
 
-__global__ void binarize_input_kernel2(float *input, int n, int size, float *binary)
+__global__ void binarize_input_kernel(float *input, int n, int size, float *binary)
 {
     int s = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
     if (s >= size) return;
@@ -41,14 +41,14 @@ __global__ void binarize_input_kernel2(float *input, int n, int size, float *bin
     }
 }
 
-void binarize_input_gpu2(float *input, int n, int size, float *binary)
+void binarize_input_gpu(float *input, int n, int size, float *binary)
 {
     binarize_input_kernel<<<cuda_gridsize(size), BLOCK>>>(input, n, size, binary);
     check_error(cudaPeekAtLastError());
 }
 
 
-__global__ void binarize_weights_kernel2(float *weights, int n, int size, float *binary)
+__global__ void binarize_weights_kernel(float *weights, int n, int size, float *binary)
 {
     int f = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
     if (f >= n) return;
@@ -64,13 +64,13 @@ __global__ void binarize_weights_kernel2(float *weights, int n, int size, float 
     }
 }
 
-void binarize_weights_gpu2(float *weights, int n, int size, float *binary)
+void binarize_weights_gpu(float *weights, int n, int size, float *binary)
 {
     binarize_weights_kernel<<<cuda_gridsize(n), BLOCK>>>(weights, n, size, binary);
     check_error(cudaPeekAtLastError());
 }
 
-void forward_convolutional_layer_gpu2(convolutional_layer l, network net)
+void forward_convolutional_layer_gpu(convolutional_layer l, network net)
 {
     fill_gpu(l.outputs*l.batch, 0, l.output_gpu, 1);
     if(l.binary){
@@ -116,7 +116,7 @@ void forward_convolutional_layer_gpu2(convolutional_layer l, network net)
             if (l.size == 1){
                 b = im;
             } else {
-                im2col_dilated_gpu(im, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, b);
+                im2col_dilated_gpu(im, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, 3, b);
             }
             gemm_gpu(0,0,m,n,k,1,a,k,b,n,1,c,n);
         }
@@ -134,7 +134,7 @@ void forward_convolutional_layer_gpu2(convolutional_layer l, network net)
     if(l.binary || l.xnor) swap_binary(&l);
 }
 
-__global__ void smooth_kernel2(float *x, int n, int w, int h, int c, int size, float rate, float *delta)
+__global__ void smooth_kernel(float *x, int n, int w, int h, int c, int size, float rate, float *delta)
 {
     int id = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
     if(id >= n) return;
@@ -164,7 +164,7 @@ __global__ void smooth_kernel2(float *x, int n, int w, int h, int c, int size, f
     }
 }
 
-extern "C" void smooth_layer2(layer l, int size, float rate)
+extern "C" void smooth_layer(layer l, int size, float rate)
 {
     int h = l.out_h;
     int w = l.out_w;
@@ -176,7 +176,7 @@ extern "C" void smooth_layer2(layer l, int size, float rate)
     check_error(cudaPeekAtLastError());
 }
 
-void backward_convolutional_layer_gpu2(convolutional_layer l, network net)
+void backward_convolutional_layer_gpu(convolutional_layer l, network net)
 {
     if(l.smooth){
         smooth_layer(l, 5, l.smooth);
@@ -243,7 +243,7 @@ void backward_convolutional_layer_gpu2(convolutional_layer l, network net)
             float *im  = net.input_gpu+(i*l.groups + j)*l.c/l.groups*l.h*l.w;
             float *imd = net.delta_gpu+(i*l.groups + j)*l.c/l.groups*l.h*l.w;
 
-            im2col_dilated_gpu(im, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, b);
+            im2col_dilated_gpu(im, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, 3, b);
             gemm_gpu(0,1,m,n,k,1,a,k,b,k,1,c,n);
 
             if (net.delta_gpu) {
@@ -270,7 +270,7 @@ void backward_convolutional_layer_gpu2(convolutional_layer l, network net)
 #endif
 }
 
-void pull_convolutional_layer2(layer l)
+void pull_convolutional_layer(layer l)
 {
     cuda_pull_array(l.weights_gpu, l.weights, l.nweights);
     cuda_pull_array(l.biases_gpu, l.biases, l.n);
@@ -283,7 +283,7 @@ void pull_convolutional_layer2(layer l)
     }
 }
 
-void push_convolutional_layer2(layer l)
+void push_convolutional_layer(layer l)
 {
     cuda_push_array(l.weights_gpu, l.weights, l.nweights);
     cuda_push_array(l.biases_gpu, l.biases, l.n);
@@ -296,7 +296,7 @@ void push_convolutional_layer2(layer l)
     }
 }
 
-void update_convolutional_layer_gpu2(layer l, update_args a)
+void update_convolutional_layer_gpu(layer l, update_args a)
 {
     float learning_rate = a.learning_rate*l.learning_rate_scale;
     float momentum = a.momentum;
