@@ -25,7 +25,7 @@ void cudnn_convolutional_setup(layer *l);
 #endif
 #endif
 
-dilated_convolutional_layer make_dilated_conv_layer(int batch, int h, int w, int c, int n, int groups, int size, int stride, int padding, ACTIVATION activation, int batch_normalize, int binary, int xnor, int adam);
+dilated_convolutional_layer make_dilated_conv_layer(int batch, int h, int w, int c, int n, int groups, int size, int stride, int padding, ACTIVATION activation, int batch_normalize, int binary, int xnor, int adam, int dilate_rate);
 void resize_dilated_conv_layer(dilated_convolutional_layer *layer, int w, int h);
 void forward_dilated_conv_layer(const dilated_convolutional_layer layer, network net);
 void update_dilated_conv_layer(dilated_convolutional_layer layer, update_args a);
@@ -40,6 +40,8 @@ image get_dilated_conv_weight(dilated_convolutional_layer layer, int i);
 
 int dilated_conv_out_height(dilated_convolutional_layer layer);
 int dilated_conv_out_width(dilated_convolutional_layer layer);
+
+void test_dilated_conv_layer();
 
 #endif
 

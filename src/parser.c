@@ -185,6 +185,7 @@ convolutional_layer parse_convolutional(list *options, size_params params)
     int pad = option_find_int_quiet(options, "pad",0);
     int padding = option_find_int_quiet(options, "padding",0);
     int groups = option_find_int_quiet(options, "groups", 1);
+    
     if(pad) padding = size/2;
 
     char *activation_s = option_find_str(options, "activation", "logistic");
@@ -215,6 +216,7 @@ dilated_convolutional_layer parse_dilated_convolutional(list *options, size_para
     int pad = option_find_int_quiet(options, "pad",0);
     int padding = option_find_int_quiet(options, "padding",0);
     int groups = option_find_int_quiet(options, "groups", 1);
+    int dilate_rate = option_find_int_quiet(options, "dilated_rate", 1);
     if(pad) padding = size/2;
 
     char *activation_s = option_find_str(options, "activation", "logistic");
@@ -230,7 +232,7 @@ dilated_convolutional_layer parse_dilated_convolutional(list *options, size_para
     int binary = option_find_int_quiet(options, "binary", 0);
     int xnor = option_find_int_quiet(options, "xnor", 0);
 
-    dilated_convolutional_layer layer = make_dilated_conv_layer(batch,h,w,c,n,groups,size,stride,padding,activation, batch_normalize, binary, xnor, params.net->adam);
+    dilated_convolutional_layer layer = make_dilated_conv_layer(batch,h,w,c,n,groups,size,stride,padding,activation, batch_normalize, binary, xnor, params.net->adam, dilate_rate);
     layer.flipped = option_find_int_quiet(options, "flipped", 0);
     layer.dot = option_find_float_quiet(options, "dot", 0);
 
