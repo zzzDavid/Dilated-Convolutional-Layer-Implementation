@@ -14,9 +14,9 @@ void im2col_cpu(float* data_im,int channels,  int height, int width, int ksize, 
 
 
 /*
-**  根据输入图像的高度(h)，两边补0的个数(pad)，卷积核尺寸(size)以及跨度(stride)计算输出的特征图的高度
-**  输入：l    卷积层，包含该卷积层的所有参数，实际这里没有必要输入整个l，因为只需要到其中的四个参数而已
-**  输出：int类型，输出图像的高度
+**  TODO:
+**  现在还不能从cfg文件中得到dilate rate
+**  BATCH NORMALIZATION
 */
 int dilated_conv_out_height(dilated_convolutional_layer l)
 {
@@ -454,7 +454,7 @@ void forward_dilated_conv_layer(dilated_convolutional_layer l, network net)
                 //TODO: dilate rate应该是在make_dilated_convolutional_layer的时候指定，这就要修改make_dilated_convolutional_layer，在.cfg中增加一个参数，修改parse等等。
                 // 暂时想到这些，这里先指定为2，试一下效果
             }
-            gemm(0,1,m,n,k,1,a,k,b,n,1,c,n);
+            gemm(0,0,m,n,k,1,a,k,b,n,1,c,n);
             //gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA, float *A, int lda, float *B, int ldb, float BETA,float *C, int ldc)  
             /*
 **  功能：调用gemm_cpu()，实际完成C = ALPHA*A*B + C*BETA 矩阵计算，
@@ -487,6 +487,17 @@ void forward_dilated_conv_layer(dilated_convolutional_layer l, network net)
     if(l.binary || l.xnor) swap_binary(&l);
 }
 
+/*
+** 卷积神经网络反向传播核心函数
+** 主要流程：1） 调用gradient_array()计算当前层l所有输出元素关于加权输入的导数值（也即激活函数关于输入的导数值），
+**             并乘上上一次调用backward_convolutional_layer()还没计算完的l.delta，得到当前层最终的敏感度图；
+**          2） 如果网络进行了BN，则；
+**          3） 如果网络没有进行BN，则直接调用 backward_bias()计算当前层所有卷积核的偏置更新值；
+**          4） 依次调用im2col_cpu()，gemm_nt()函数计算当前层权重系数更新值；
+**          5） 如果上一层的delta已经动态分配了内存，则依次调用gemm_tn(), col2im_cpu()计算上一层的敏感度图（并未完成所有计算，还差一个步骤）；
+** 强调：每次调用本函数会计算完成当前层的敏感度计算，同时计算当前层的偏置、权重更新值，除此之外，还会计算上一层的敏感度图，但是要注意的是，
+**      并没有完全计算完，还差一步：乘上激活函数对加权输入的导数值。这一步在下一次调用本函数时完成。
+*/
 void backward_dilated_conv_layer(dilated_convolutional_layer l, network net)
 {
     int i, j;
