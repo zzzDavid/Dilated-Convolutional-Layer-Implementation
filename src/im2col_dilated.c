@@ -10,10 +10,10 @@ void im2col_dilated_cpu(float* data_im,
      int ksize,  int stride, int pad, float* data_col, int dilate_rate) 
 {
     printf("Entering im2col_dilated_cpu\n");
-    //ksize = ((dilate_rate - 1) * (ksize + 1) + ksize));
     int c,h,w;
-    int height_col = (height + 2*pad - ((dilate_rate - 1) * (ksize + 1) + ksize)) / stride + 1;
-    int width_col = (width + 2*pad - ((dilate_rate - 1) * (ksize + 1) + ksize)) / stride + 1;
+    int dilate_ksize = (dilate_rate - 1) * (ksize + 1) + ksize;
+    int height_col = (height + 2*pad - dilate_ksize) / stride + 1;
+    int width_col = (width + 2*pad - dilate_ksize) / stride + 1;
     //height_col = height_col / dilate_rate;
     //width_col = width_col / dilate_rate;
     //printf("height_col = width_col = %d\n", height_col);
