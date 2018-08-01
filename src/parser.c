@@ -216,7 +216,7 @@ dilated_convolutional_layer parse_dilated_convolutional(list *options, size_para
     int pad = option_find_int_quiet(options, "pad",0);
     int padding = option_find_int_quiet(options, "padding",0);
     int groups = option_find_int_quiet(options, "groups", 1);
-    int dilate_rate = option_find_int_quiet(options, "dilated_rate", 1);
+    int dilate_rate = option_find_int_quiet(options, "dilate_rate", 1);
     if(pad) padding = size/2;
 
     char *activation_s = option_find_str(options, "activation", "logistic");

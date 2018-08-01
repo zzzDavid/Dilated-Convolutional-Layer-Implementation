@@ -42,6 +42,7 @@ int dilated_conv_out_height(dilated_convolutional_layer layer);
 int dilated_conv_out_width(dilated_convolutional_layer layer);
 
 void test_dilated_conv_layer();
+void test_dilated_conv_layer_gpu();
 
 #endif
 

@@ -4,81 +4,48 @@
 
 extern "C" {
 #include "convolutional_layer.h"
+#include "dilated_convolutional_layer.h"
 #include "batchnorm_layer.h"
 #include "gemm.h"
 #include "blas.h"
 #include "im2col_dilated.h"
+#include "im2col.h"
 #include "col2im.h"
 #include "utils.h"
 #include "cuda.h"
+#include "darknet.h"
 }
 
-__global__ void binarize_kernel(float *x, int n, float *binary)
-{
-    int i = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
-    if (i >= n) return;
-    binary[i] = (x[i] >= 0) ? 1 : -1;
-}
-
-void binarize_gpu(float *x, int n, float *binary)
-{
-    binarize_kernel<<<cuda_gridsize(n), BLOCK>>>(x, n, binary);
-    check_error(cudaPeekAtLastError());
-}
-
-__global__ void binarize_input_kernel(float *input, int n, int size, float *binary)
-{
-    int s = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
-    if (s >= size) return;
-    int i = 0;
-    float mean = 0;
-    for(i = 0; i < n; ++i){
-        mean += fabsf(input[i*size + s]);
-    }
-    mean = mean / n;
-    for(i = 0; i < n; ++i){
-        binary[i*size + s] = (input[i*size + s] > 0) ? mean : -mean;
-    }
-}
-
-void binarize_input_gpu(float *input, int n, int size, float *binary)
-{
-    binarize_input_kernel<<<cuda_gridsize(size), BLOCK>>>(input, n, size, binary);
-    check_error(cudaPeekAtLastError());
-}
+__global__ void binarize_kernel(float *x, int n, float *binary);
 
 
-__global__ void binarize_weights_kernel(float *weights, int n, int size, float *binary)
-{
-    int f = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
-    if (f >= n) return;
-    int i = 0;
-    float mean = 0;
-    for(i = 0; i < size; ++i){
-        mean += fabsf(weights[f*size + i]);
-    }
-    mean = mean / size;
-    for(i = 0; i < size; ++i){
-        binary[f*size + i] = (weights[f*size + i] > 0) ? mean : -mean;
-        //binary[f*size + i] = weights[f*size + i];
-    }
-}
+void binarize_gpu(float *x, int n, float *binary);
 
-void binarize_weights_gpu(float *weights, int n, int size, float *binary)
-{
-    binarize_weights_kernel<<<cuda_gridsize(n), BLOCK>>>(weights, n, size, binary);
-    check_error(cudaPeekAtLastError());
-}
+__global__ void binarize_input_kernel(float *input, int n, int size, float *binary);
 
-void forward_convolutional_layer_gpu(convolutional_layer l, network net)
+
+void binarize_input_gpu(float *input, int n, int size, float *binary);
+
+
+
+__global__ void binarize_weights_kernel(float *weights, int n, int size, float *binary);
+
+void binarize_weights_gpu(float *weights, int n, int size, float *binary);
+
+
+void forward_dilated_conv_layer_gpu(dilated_convolutional_layer l, network net)
 {
+    printf("I'm in forward_dilated_conv_layer_gpu!\n");
     fill_gpu(l.outputs*l.batch, 0, l.output_gpu, 1);
+    printf("Fill GPU success!\n");
     if(l.binary){
+        printf("Binarize in progress!\n");
         binarize_weights_gpu(l.weights_gpu, l.n, l.c/l.groups*l.size*l.size, l.binary_weights_gpu);
         swap_binary(&l);
     }
 
     if(l.xnor){
+        printf("Xnor construction in progress!\n");
         binarize_weights_gpu(l.weights_gpu, l.n, l.c/l.groups*l.size*l.size, l.binary_weights_gpu);
         swap_binary(&l);
         binarize_gpu(net.input_gpu, l.c*l.h*l.w*l.batch, l.binary_input_gpu);
@@ -116,9 +83,52 @@ void forward_convolutional_layer_gpu(convolutional_layer l, network net)
             if (l.size == 1){
                 b = im;
             } else {
-                im2col_dilated_gpu(im, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, 3, b);
+                printf("I'm going to call im2col_dilated_gpu!\n");
+                //-----------print im2col input-----------------------------------------------------
+                /*printf("image = \n");
+                float *temp = im;
+                for (int i = 1; i <= l.inputs; i++)
+                {
+                    if (i % 10 == 0)
+                    {
+                        printf("%d\t", (int)*temp);
+                        printf("\n");
+                        temp = temp + 1;
+                    }else{
+                        printf("%d\t", (int)*temp);
+                        temp = temp + 1;
+                    }
+                    //printf("i = %d\t", i);
+                }*/
+                //-----------------------------------------------------------------------------------
+                im2col_dilated_gpu(im, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, l.dilate_rate, b);
+                //------------print im2col output-----------------------------------------------------
+                /*printf("image_col = \n");
+                temp = b;
+                for (int i = 1; i <= 36*12; i++)
+                {
+                    if (i % 36 == 0)
+                    {
+                        printf("%d\t", (int)*temp);
+                        printf("\n");
+                        temp = temp + 1;
+                    }else{
+                        printf("%d\t", (int)*temp);
+                        temp = temp + 1;
+                    }
+                    //printf("i = %d\t", i);
+                }*/
+                //-------------------------------------------------------------------------------------
+
             }
+            printf("I'm going to call gemm_gpu!\n");
             gemm_gpu(0,0,m,n,k,1,a,k,b,n,1,c,n);
+            // TA = 0; TB = 0, M = m, N = n, K = k, Alpha = 1, *A = a, lda = k, *B = b, ldb = n, Beta = 1, *C = c, ldc = n
+            /*void gemm_gpu(int TA, int TB, int M, int N, int K, float ALPHA, 
+                float *A, int lda, 
+                float *B, int ldb,
+                float BETA,
+                float *C, int ldc)*/
         }
     }
 #endif
@@ -134,49 +144,13 @@ void forward_convolutional_layer_gpu(convolutional_layer l, network net)
     if(l.binary || l.xnor) swap_binary(&l);
 }
 
-__global__ void smooth_kernel(float *x, int n, int w, int h, int c, int size, float rate, float *delta)
-{
-    int id = (blockIdx.x + blockIdx.y*gridDim.x) * blockDim.x + threadIdx.x;
-    if(id >= n) return;
+__global__ void smooth_kernel(float *x, int n, int w, int h, int c, int size, float rate, float *delta);
 
-    int j = id % w;
-    id /= w;
-    int i = id % h;
-    id /= h;
-    int k = id % c;
-    id /= c;
-    int b = id;
 
-    int w_offset = -(size/2.f);
-    int h_offset = -(size/2.f);
+extern "C" void smooth_layer(layer l, int size, float rate);
 
-    int out_index = j + w*(i + h*(k + c*b));
-    int l, m;
-    for(l = 0; l < size; ++l){
-        for(m = 0; m < size; ++m){
-            int cur_h = h_offset + i + l;
-            int cur_w = w_offset + j + m;
-            int index = cur_w + w*(cur_h + h*(k + b*c));
-            int valid = (cur_h >= 0 && cur_h < h &&
-                    cur_w >= 0 && cur_w < w);
-            delta[out_index] += valid ? rate*(x[index] - x[out_index]) : 0;
-        }
-    }
-}
 
-extern "C" void smooth_layer(layer l, int size, float rate)
-{
-    int h = l.out_h;
-    int w = l.out_w;
-    int c = l.out_c;
-
-    size_t n = h*w*c*l.batch;
-
-    smooth_kernel<<<cuda_gridsize(n), BLOCK>>>(l.output_gpu, n, l.w, l.h, l.c, size, rate, l.delta_gpu);
-    check_error(cudaPeekAtLastError());
-}
-
-void backward_convolutional_layer_gpu(convolutional_layer l, network net)
+void backward_dilated_conv_layer_gpu(convolutional_layer l, network net)
 {
     if(l.smooth){
         smooth_layer(l, 5, l.smooth);
@@ -270,7 +244,7 @@ void backward_convolutional_layer_gpu(convolutional_layer l, network net)
 #endif
 }
 
-void pull_convolutional_layer(layer l)
+void pull_dilated_conv_layer(layer l)
 {
     cuda_pull_array(l.weights_gpu, l.weights, l.nweights);
     cuda_pull_array(l.biases_gpu, l.biases, l.n);
@@ -283,7 +257,7 @@ void pull_convolutional_layer(layer l)
     }
 }
 
-void push_convolutional_layer(layer l)
+void push_dilated_conv_layer(layer l)
 {
     cuda_push_array(l.weights_gpu, l.weights, l.nweights);
     cuda_push_array(l.biases_gpu, l.biases, l.n);
@@ -296,7 +270,8 @@ void push_convolutional_layer(layer l)
     }
 }
 
-void update_convolutional_layer_gpu(layer l, update_args a)
+
+void update_dilated_conv_layer_gpu(layer l, update_args a)
 {
     float learning_rate = a.learning_rate*l.learning_rate_scale;
     float momentum = a.momentum;
@@ -327,4 +302,72 @@ void update_convolutional_layer_gpu(layer l, update_args a)
     }
 }
 
+void test_dilated_conv_layer_gpu()
+{
+    printf("Entering test_dilated_conv_layer()\n");
+    dilated_convolutional_layer l = make_dilated_conv_layer(1, 10, 10, 3, 1, 1, 2, 1, 0, LEAKY, 0, 0, 0, 0, 2);
+    // batch = 1, h = 10, w = 10, c = 3, n = 1, group = 1, size = 2, stride = 1, padding = 0, activation = LEAKY, 
+    // batch_nomarlize = 0, binary = 0, xnor = 0, adam = 0, dilate_rate = 2
+    printf("make dilated conv layer success!\n");
+    float data[] = {
+        1,1,1,1,1,1,1,1,1,1,
+        2,2,2,2,2,2,2,2,2,2,
+        3,3,3,3,3,3,3,3,3,3,
+        4,4,4,4,4,4,4,4,4,4,
+        5,5,5,5,5,5,5,5,5,5,
+        6,6,6,6,6,6,6,6,6,6,
+        7,7,7,7,7,7,7,7,7,7,
+        8,8,8,8,8,8,8,8,8,8,
+        9,9,9,9,9,9,9,9,9,9,
+        9,9,9,9,9,9,9,9,9,9,
+
+        1,1,1,1,1,1,1,1,1,1,
+        2,2,2,2,2,2,2,2,2,2,
+        3,3,3,3,3,3,3,3,3,3,
+        4,4,4,4,4,4,4,4,4,4,
+        5,5,5,5,5,5,5,5,5,5,
+        6,6,6,6,6,6,6,6,6,6,
+        7,7,7,7,7,7,7,7,7,7,
+        8,8,8,8,8,8,8,8,8,8,
+        9,9,9,9,9,9,9,9,9,9,
+        9,9,9,9,9,9,9,9,9,9,
+
+        1,1,1,1,1,1,1,1,1,1,
+        2,2,2,2,2,2,2,2,2,2,
+        3,3,3,3,3,3,3,3,3,3,
+        4,4,4,4,4,4,4,4,4,4,
+        5,5,5,5,5,5,5,5,5,5,
+        6,6,6,6,6,6,6,6,6,6,
+        7,7,7,7,7,7,7,7,7,7,
+        8,8,8,8,8,8,8,8,8,8,
+        9,9,9,9,9,9,9,9,9,9,
+        9,9,9,9,9,9,9,9,9,9};
+
+    float w[] = {
+        1,1,1,1,1,1,1,1,1,1,1,1
+    };
+    network net = *make_network(1);
+    net.layers = &l;
+    net.input_gpu = data;
+    net.workspace = (float*) calloc(1, l.outputs);
+    l.weights_gpu = w;
+    forward_dilated_conv_layer_gpu(l, net);
+    
+    float *temp = l.output_gpu;
+    printf("Output:\n");
+    printf("Number of output: %d\n", l.outputs);
+    for (int i = 1; i <= l.outputs; i++)
+    {
+        if (i % 6 == 0)
+        {
+            printf("%f\t", *temp);
+            printf("\n");
+            temp = temp + 1;
+        }else{
+            printf("%f\t", *temp);
+            temp = temp + 1;
+        }
+        //printf("i = %d\t", i);
+    }
+}
 

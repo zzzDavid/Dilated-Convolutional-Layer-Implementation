@@ -20,14 +20,14 @@ void im2col_cpu(float* data_im,int channels,  int height, int width, int ksize, 
 */
 int dilated_conv_out_height(dilated_convolutional_layer l)
 {
-    l.size = (l.dilated_rate - 1) * (l.size + 1) + l.size;
+    l.size = (l.dilate_rate - 1) * (l.size + 1) + l.size;
     //printf("new kernel size = %d\n", l.size);
     return (l.h + 2*l.pad - l.size) / l.stride + 1;
 }
 
 int dilated_conv_out_width(dilated_convolutional_layer l)
 {
-    l.size = (l.dilated_rate - 1) * (l.size + 1) + l.size;
+    l.size = (l.dilate_rate - 1) * (l.size + 1) + l.size;
     return (l.w + 2*l.pad - l.size) / l.stride + 1;
 }
 
@@ -137,7 +137,7 @@ dilated_convolutional_layer make_dilated_conv_layer(int batch, int h, int w, int
     dilated_convolutional_layer l = {0};
     l.type = DILATED_CONVOLUTIONAL;
 
-    l.dilated_rate = dilate_rate;
+    l.dilate_rate = dilate_rate;
     l.groups = groups;
     l.h = h;
     l.w = w;
@@ -448,7 +448,7 @@ void forward_dilated_conv_layer(dilated_convolutional_layer l, network net)
             if (l.size == 1) {
                 b = im;
             } else {
-                im2col_dilated_cpu(im, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, b, l.dilated_rate); // re-format the input image
+                im2col_dilated_cpu(im, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, b, l.dilate_rate); // re-format the input image
                 printf("im2col_dilated_cpu success\n");
                 //im2col_cpu(float* data_im,int channels,  int height,  int width, int ksize,  int stride, int pad, float* data_col) 
                 //TODO: dilate rate应该是在make_dilated_convolutional_layer的时候指定，这就要修改make_dilated_convolutional_layer，在.cfg中增加一个参数，修改parse等等。

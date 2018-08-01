@@ -166,7 +166,7 @@ struct layer{
     int flatten;
     int spatial;
     int pad;                     // 该层对输入数据四周的补0长度（现在发现在卷积层，最大池化层中有用到该参数），一般在构建具体网络层时赋值（比如make_maxpool_layer()中）
-    int dilated_rate;            // 扩张卷积的扩张度
+    int dilate_rate;            // 扩张卷积的扩张度
     int sqrt;
     int flip;
     int index;

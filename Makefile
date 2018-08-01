@@ -61,7 +61,7 @@ OBJ= dilated_convolutional_layer.o im2col_dilated.o  gemm.o utils.o cuda.o decon
 EXECOBJA=captcha.o lsd.o super.o art.o tag.o cifar.o go.o rnn.o segmenter.o regressor.o classifier.o coco.o yolo.o detector.o nightmare.o darknet.o
 ifeq ($(GPU), 1)
 LDFLAGS+= -lstdc++
-OBJ+=dilated_convolutional_kernels im2col_kernels_dilated.o convolutional_kernels.o deconvolutional_kernels.o activation_kernels.o im2col_kernels.o col2im_kernels.o blas_kernels.o crop_layer_kernels.o dropout_layer_kernels.o maxpool_layer_kernels.o avgpool_layer_kernels.o
+OBJ+=dilated_convolutional_kernels.o im2col_kernels_dilated.o convolutional_kernels.o deconvolutional_kernels.o activation_kernels.o im2col_kernels.o col2im_kernels.o blas_kernels.o crop_layer_kernels.o dropout_layer_kernels.o maxpool_layer_kernels.o avgpool_layer_kernels.o
 endif
 
 EXECOBJ = $(addprefix $(OBJDIR), $(EXECOBJA))
