@@ -242,6 +242,7 @@ dilated_convolutional_layer make_dilated_conv_layer(int batch, int h, int w, int
 
         l.delta_gpu = cuda_make_array(l.delta, l.batch*out_h*out_w*n);
         l.output_gpu = cuda_make_array(l.output, l.batch*out_h*out_w*n);
+        //l.output_gpu = calloc(l.batch*out_h*out_w*n, sizeof(float));
 
         if(binary){
             l.binary_weights_gpu = cuda_make_array(l.weights, l.nweights);
@@ -525,8 +526,8 @@ void backward_dilated_conv_layer(dilated_convolutional_layer l, network net)
             if(l.size == 1){
                 b = im;
             } else {
-                im2col_cpu(im, l.c/l.groups, l.h, l.w, 
-                        l.size, l.stride, l.pad, b);
+                im2col_dilated_cpu(im, l.c/l.groups, l.h, l.w, 
+                        l.size, l.stride, l.pad, b, l.dilate_rate);
             }
 
             gemm(0,1,m,n,k,1,a,k,b,k,1,c,n);

@@ -175,10 +175,62 @@ void gemm_gpu(int TA, int TB, int M, int N, int K, float ALPHA,
         float BETA,
         float *C_gpu, int ldc)
 {
+    /*printf("I'm in gemm_gpu!\n");
+    printf("A_gpu = \n");
+    float *temp = A_gpu;
+    for (int i = 1; i <= 12; i++)
+    {
+        if (i % 12 == 0)
+        {
+            printf("%d\t", (int)*temp);
+            printf("\n");
+            temp = temp + 1;
+        }else{
+            printf("%d\t", (int)*temp);
+            temp = temp + 1;
+        }
+    }
+    printf("B_gpu = \n");
+    temp = B_gpu;
+    for (int i = 1; i <= 36*12; i++)
+    {
+        if (i % 36 == 0)
+        {
+            printf("%d  ", (int)*temp);
+            printf("\n");
+            temp = temp + 1;
+        }else{
+            printf("%d  ", (int)*temp);
+            temp = temp + 1;
+        }
+    }*/
+    //printf("CHECKING INPUT PARAMETERS\n");
+    //printf("ALPHA = %d, BETA = %d\n",(int)ALPHA, (int)BETA);
+    //printf("TB = %d, TA = %d, N = %d, M = %d, K = %d, ALPHA = %d, ldb = %d, lda = %d, BETA = %d, ldc = %d\n", TB,TA,N,M,K,(int)ALPHA,(int)ldb,lda,(int)BETA,(int)ldc);
     cublasHandle_t handle = blas_handle();
-    cudaError_t status = cublasSgemm(handle, (TB ? CUBLAS_OP_T : CUBLAS_OP_N), 
-            (TA ? CUBLAS_OP_T : CUBLAS_OP_N), N, M, K, &ALPHA, B_gpu, ldb, A_gpu, lda, &BETA, C_gpu, ldc);
+    printf("handle created successfully\n");
+    //float *c = cuda_make_array(C_gpu, ldc*M);
+    //cudaError_t status = cublasSgemm(handle, (TB ? CUBLAS_OP_T : CUBLAS_OP_N), 
+      //      (TA ? CUBLAS_OP_T : CUBLAS_OP_N), N, M, K, &ALPHA, B_gpu, ldb, A_gpu, lda, &BETA, C_gpu, ldc);
+    cudaError_t status = cublasSgemm(handle, (TB ? CUBLAS_OP_N : CUBLAS_OP_T), 
+            (TA ? CUBLAS_OP_N : CUBLAS_OP_T), M, N, K, &ALPHA, A_gpu, lda, B_gpu, ldb, &BETA, C_gpu, ldc);
+    //cudaMemcpy((void*)C_gpu,(void*)c,ldc*M*sizeof(float),cudaMemcpyDeviceToHost);
+    cublasDestroy(handle);
+    printf("cudaSgemm complete.\n");
     check_error(status);
+    /*float *temp = C_gpu;
+    for (int i = 1; i <= 12; i++)
+    {
+        if (i % 12 == 0)
+        {
+            printf("%f\t", *temp);
+            printf("\n");
+            temp = temp + 1;
+        }else{
+            printf("%f\t", *temp);
+            temp = temp + 1;
+        }
+    }*/
 }
 
 #include <stdio.h>
