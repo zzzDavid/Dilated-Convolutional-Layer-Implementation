@@ -57,16 +57,17 @@ void im2col_dilated_gpu(float *im_cpu,
     
     // 在GPU分配内存
     float *im_gpu, *col_gpu;
-    im_gpu = cuda_make_array(im_cpu, channels*height*width);
-    col_gpu = cuda_make_array(col_cpu, num_kernels*height_col*width_col);
+    cudaMalloc((void**)&im_gpu, channels*height*width*sizeof(float));
+    cudaMalloc((void**)&col_gpu, channels*ksize*ksize*height_col*width_col*sizeof(float));
     
+    cudaMemcpy(im_gpu, im_cpu, channels*height*width*sizeof(float), cudaMemcpyHostToDevice);
 
     im2col_dilated_gpu_kernel<<<(num_kernels+BLOCK-1)/BLOCK,          //参数1：一个gird里有这么多block, 参数2：一个block里有这么多thread
        BLOCK>>>(num_kernels, im_gpu, height, width, ksize, pad,stride, height_col,width_col, dilate_rate, col_gpu);
 
-    cudaMemcpy((void*)col_cpu, (void*)col_gpu, num_kernels*height_col*width_col*sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(col_cpu, col_gpu, channels*ksize*ksize*height_col*width_col*sizeof(float), cudaMemcpyDeviceToHost);
     // 释放内存
-    cudaFree(im_gpu);
-    cudaFree(col_gpu);
+    //cudaFree(im_gpu);
+    //cudaFree(col_gpu);
 }
 

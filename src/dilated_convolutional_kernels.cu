@@ -36,7 +36,7 @@ void binarize_weights_gpu(float *weights, int n, int size, float *binary);
 void forward_dilated_conv_layer_gpu(dilated_convolutional_layer l, network net)
 {
     printf("I'm in forward_dilated_conv_layer_gpu!\n");
-    fill_gpu(l.outputs*l.batch, 0, l.output_gpu, 1);
+    //fill_gpu(l.outputs*l.batch, 0, l.output_gpu, 1);
     printf("Fill GPU success!\n");
     if(l.binary){
         printf("Binarize in progress!\n");
@@ -85,7 +85,7 @@ void forward_dilated_conv_layer_gpu(dilated_convolutional_layer l, network net)
             } else {
                 printf("I'm going to call im2col_dilated_gpu!\n");
                 //-----------print im2col input-----------------------------------------------------
-                /*printf("image = \n");
+                printf("image = \n");
                 float *temp = im;
                 for (int i = 1; i <= l.inputs; i++)
                 {
@@ -99,12 +99,12 @@ void forward_dilated_conv_layer_gpu(dilated_convolutional_layer l, network net)
                         temp = temp + 1;
                     }
                     //printf("i = %d\t", i);
-                }*/
+                }
                 //-----------------------------------------------------------------------------------
                 im2col_dilated_gpu(im, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, l.dilate_rate, b);
                 //------------print im2col output-----------------------------------------------------
                 printf("image_col = \n");
-                float *temp = b;
+                temp = b;
                 for (int i = 1; i <= 36*12; i++)
                 {
                     if (i % 36 == 0)
@@ -120,18 +120,11 @@ void forward_dilated_conv_layer_gpu(dilated_convolutional_layer l, network net)
                 //-------------------------------------------------------------------------------------
 
             }
-            //printf("I'm going to call gemm_gpu!\n");
+            printf("I'm going to call gemm_gpu!\n");
             gemm_gpu(0,0,m,n,k,1,a,k,b,n,1,c,n);
-            //printf("gemm_gpu finished\n");
-            // TA = 0; TB = 0, M = m, N = n, K = k, Alpha = 1, *A = a, lda = n, *B = b, ldb = k, Beta = 1, *C = c, ldc = n
-            /*void gemm_gpu(int TA, int TB, int M, int N, int K, float ALPHA, 
-                float *A, int lda, 
-                float *B, int ldb,
-                float BETA,
-                float *C, int ldc)*/
 
             // print gemm output
-            /*printf("gemm_gpu output = \n");
+            printf("gemm_gpu output = \n");
             float *temp = c;
             for (int i = 1; i <= l.outputs; i++)
             {
@@ -142,8 +135,8 @@ void forward_dilated_conv_layer_gpu(dilated_convolutional_layer l, network net)
                     temp = temp + 1;
                 }else{
                     printf("%f\t", *temp);
-                    temp = temp + 1;
-            }*/
+                    temp = temp + 1;}
+            }
         }
 
     }
@@ -363,19 +356,22 @@ void test_dilated_conv_layer_gpu()
     float w[] = {
         1,1,1,1,1,1,1,1,1,1,1,1
     };
+    float work[36*12] = {0};
     float out[] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
     network net = *make_network(1);
     net.layers = &l;
     net.input_gpu = data;
-    net.workspace = (float*) calloc(1, l.outputs);
+    net.workspace = work;
+    //net.workspace = (float*) calloc(1, l.nweights*l.outputs);
     l.weights_gpu = w;
+    l.output_gpu = out;
     forward_dilated_conv_layer_gpu(l, net);
     
-    //float *temp = out;
-    //cudaMemcpy(temp, l.output_gpu, l.outputs*sizeof(float),cudaMemcpyDeviceToHost);
-    //printf("Output:\n");
-    //printf("Number of output: %d\n", l.outputs);
-    /*for (int i = 1; i <= l.outputs; i++)
+    float *temp = out;
+    cudaMemcpy(temp, l.output_gpu, l.outputs*sizeof(float),cudaMemcpyDeviceToHost);
+    printf("Output:\n");
+    printf("Number of output: %d\n", l.outputs);
+    for (int i = 1; i <= l.outputs; i++)
     {
         if (i % 6 == 0)
         {
@@ -387,6 +383,8 @@ void test_dilated_conv_layer_gpu()
             temp = temp + 1;
         }
         //printf("i = %d\t", i);
-    }*/
+    }
+    printf("test complete successfully.\n");
+
 }
 
