@@ -44,5 +44,7 @@ int dilated_conv_out_width(dilated_convolutional_layer layer);
 void test_dilated_conv_layer();
 void test_dilated_conv_layer_gpu();
 
+float* select(float* delta, int n, int ksize, int dilate_rate, int pad, int height, int width, int stride);
+
 #endif
 

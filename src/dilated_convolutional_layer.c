@@ -511,13 +511,13 @@ void backward_dilated_conv_layer(dilated_convolutional_layer l, network net)
     if(l.batch_normalize){
         backward_batchnorm_layer(l, net);
     } else {
-        backward_bias(l.bias_updates, l.delta, l.batch, l.n, k);
+        backward_bias(l.bias_updates, l.delta, l.batch, l.n, k);   // update biases
     }
 
     for(i = 0; i < l.batch; ++i){
         for(j = 0; j < l.groups; ++j){
-            float *a = l.delta + (i*l.groups + j)*m*k;
-            float *b = net.workspace;
+            float *a = l.delta + (i*l.groups + j)*m*k;         // 计算好的delta(dL/dh)
+            float *b = net.workspace;                          // x
             float *c = l.weight_updates + j*l.nweights/l.groups;
 
             float *im  = net.input + (i*l.groups + j)*l.c/l.groups*l.h*l.w;
@@ -526,24 +526,27 @@ void backward_dilated_conv_layer(dilated_convolutional_layer l, network net)
             if(l.size == 1){
                 b = im;
             } else {
-                im2col_dilated_cpu(im, l.c/l.groups, l.h, l.w, 
-                        l.size, l.stride, l.pad, b, l.dilate_rate);
+                im2col_cpu(im, l.c/l.groups, l.h, l.w, 
+                        l.size, l.stride, l.pad, b); // 这里应该用普通的im2col进行
             }
 
-            gemm(0,1,m,n,k,1,a,k,b,k,1,c,n);
+            gemm(0,1,m,n,k,1,a,k,b,k,1,c,n);    // c (weight_update) = x (*) dL/dh
 
-            if (net.delta) {
-                a = l.weights + j*l.nweights/l.groups;
-                b = l.delta + (i*l.groups + j)*m*k;
-                c = net.workspace;
+            if (net.delta) { // 如果上一层的delta已经动态分配了内存  net.delta是前层的导数，l.delta是本层的导数
+                a = l.weights + j*l.nweights/l.groups;  // a = weight matrix
+                b = l.delta + (i*l.groups + j)*m*k;     // b = delta matrix
+                c = net.workspace;                      // c = workspace
                 if (l.size == 1) {
                     c = imd;
                 }
 
-                gemm(1,0,n,k,m,1,a,n,b,k,0,c,k);
+                float *dilated_delta = select(b,m,l.size,l.dilate_rate,l.pad,l.h,l.w,l.stride);
+
+                gemm(1,0,n,k,m,1,a,n,dilated_delta,k,0,c,k);       // workspace = weight matrix' * delta  matrix
 
                 if (l.size != 1) {
-                    col2im_cpu(net.workspace, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, imd);
+                    col2im_cpu(net.workspace, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, imd, l.dilate_rate);
+                    // input: workspace, output: imd(net.delta)
                 }
             }
         }
