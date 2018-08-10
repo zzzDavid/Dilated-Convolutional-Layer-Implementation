@@ -2,8 +2,6 @@
 #include "convolutional_layer.h"
 #include "utils.h"
 #include "batchnorm_layer.h"
-#include "im2col_dilated.h"
-#include "col2im.h"
 #include "blas.h"
 #include "gemm.h"
 #include <stdio.h>
@@ -11,6 +9,8 @@
 
 void binarize_cpu(float *input, int n, float *binary);
 void im2col_cpu(float* data_im,int channels,  int height, int width, int ksize,  int stride, int pad, float* data_col);
+void col2im_dilated_cpu(float* data_col,int channels, int height, int width, int ksize, int stride, int pad, float* data_im, int dilate_rate);
+void im2col_dilated_cpu(float* data_im, int channels,  int height,  int width,int ksize,  int stride, int pad, float* data_col, int dilate_rate);
 
 
 /*
@@ -540,12 +540,10 @@ void backward_dilated_conv_layer(dilated_convolutional_layer l, network net)
                     c = imd;
                 }
 
-                float *dilated_delta = select(b,m,l.size,l.dilate_rate,l.pad,l.h,l.w,l.stride);
-
-                gemm(1,0,n,k,m,1,a,n,dilated_delta,k,0,c,k);       // workspace = weight matrix' * delta  matrix
+                gemm(1,0,n,k,m,1,a,n,b,k,0,c,k);       // workspace = weight matrix' * delta  matrix
 
                 if (l.size != 1) {
-                    col2im_cpu(net.workspace, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, imd, l.dilate_rate);
+                    col2im_dilated_cpu(net.workspace, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, imd, l.dilate_rate);
                     // input: workspace, output: imd(net.delta)
                 }
             }

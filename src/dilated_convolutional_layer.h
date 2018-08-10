@@ -6,16 +6,21 @@
 #include "activations.h"
 #include "layer.h"
 #include "network.h"
+#include "im2col_dilated.h"
+
+#include "col2im.h"
+#include "col2im_dilated.h"
+#include "im2col.h"
 
 typedef layer dilated_convolutional_layer;
 
 #ifdef GPU
-void forward_convolutional_layer_gpu(dilated_convolutional_layer layer, network net);
-void backward_convolutional_layer_gpu(dilated_convolutional_layer layer, network net);
-void update_convolutional_layer_gpu(dilated_convolutional_layer layer, update_args a);
+void forward_dilated_conv_layer_gpu(dilated_convolutional_layer layer, network net);
+void backward_dilated_conv_layer_gpu(dilated_convolutional_layer layer, network net);
+void update_dilated_conv_layer_gpu(dilated_convolutional_layer layer, update_args a);
 
-void push_convolutional_layer(dilated_convolutional_layer layer);
-void pull_convolutional_layer(dilated_convolutional_layer layer);
+void push_dilated_conv_layer(dilated_convolutional_layer layer);
+void pull_dilated_conv_layer(dilated_convolutional_layer layer);
 
 void add_bias_gpu(float *output, float *biases, int batch, int n, int size);
 void backward_bias_gpu(float *bias_updates, float *delta, int batch, int n, int size);
@@ -43,8 +48,7 @@ int dilated_conv_out_width(dilated_convolutional_layer layer);
 
 void test_dilated_conv_layer();
 void test_dilated_conv_layer_gpu();
-
-float* select(float* delta, int n, int ksize, int dilate_rate, int pad, int height, int width, int stride);
+void test_col2im_gpu();
 
 #endif
 

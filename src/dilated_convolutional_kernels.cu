@@ -8,13 +8,14 @@ extern "C" {
 #include "batchnorm_layer.h"
 #include "gemm.h"
 #include "blas.h"
-#include "im2col_dilated.h"
-#include "im2col.h"
-#include "col2im.h"
 #include "utils.h"
-#include "cuda.h"
 #include "darknet.h"
+#include "cuda.h"
 }
+
+void col2im_dilated_gpu(float *data_col,int channels, int height, int width, int ksize, int stride, int pad, float *data_im, int dilate_rate);
+void im2col_gpu(float *im,int channels, int height, int width, int ksize, int stride, int pad,float *data_col);
+void im2col_dilated_gpu(float *im_cpu, int channels, int height, int width,int ksize, int stride, int pad, int dilate_rate, float *col_cpu);
 
 __global__ void binarize_kernel(float *x, int n, float *binary);
 
@@ -227,7 +228,7 @@ void backward_dilated_conv_layer_gpu(convolutional_layer l, network net)
             float *im  = net.input_gpu+(i*l.groups + j)*l.c/l.groups*l.h*l.w;
             float *imd = net.delta_gpu+(i*l.groups + j)*l.c/l.groups*l.h*l.w;
 
-            im2col_dilated_gpu(im, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, 3, b);
+            im2col_gpu(im, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, b);
             gemm_gpu(0,1,m,n,k,1,a,k,b,k,1,c,n);
 
             if (net.delta_gpu) {
@@ -242,7 +243,7 @@ void backward_dilated_conv_layer_gpu(convolutional_layer l, network net)
                 gemm_gpu(1,0,n,k,m,1,a,n,b,k,0,c,k);
 
                 if (l.size != 1) {
-                    col2im_gpu(net.workspace, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, imd);
+                    col2im_dilated_gpu(net.workspace, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, imd, l.dilate_rate);
                 }
                 if(l.binary || l.xnor) {
                     swap_binary(&l);
@@ -388,3 +389,43 @@ void test_dilated_conv_layer_gpu()
 
 }
 
+void test_col2im_gpu()
+{
+    float col[4*36] = {0};
+	float im[9] = {0};
+	for(int i=0; i<4*36; i++) col[i] = i+1;
+	float *col_cpu = col;
+	int channels = 1;
+	int height = 10;
+	int width = 10;
+	int ksize = 2;
+	int stride = 1;
+	int pad = 0;
+	float *im_cpu = im;
+    int dilate_rate = 2;
+    int dilate_ksize = (dilate_rate - 1) * (ksize + 1) + ksize;
+    int height_col = (height + 2 * pad - dilate_ksize) / stride + 1; // convolutional layer output height
+    int width_col = (width + 2 * pad - dilate_ksize) / stride + 1;   // convolutional layer output width
+//    int num_kernels = channels * height_col * width_col;             // number of elements in each kernel
+    printf("col_cpu = \n");
+    for (int i=0; i < ksize * ksize * channels; i++)
+    {
+    	for (int j=0; j < height_col*width_col*channels; j++)
+    	{
+    		printf("%d ", (int)col_cpu[i*height_col*width_col*channels+j]);
+    	 }
+    	 printf("\n");
+    }
+    printf("\n");
+    col2im_dilated_gpu(col_cpu, channels, height, width, ksize, stride, pad, im_cpu, dilate_rate);
+    printf("im_cpu = \n");
+     for (int i=0; i < height; i++)
+     {
+    	 for (int j=0; j < width; j++)
+    	 {
+    		 printf("%d\t", (int)im_cpu[i*width+j]);
+    	 }
+    	 printf("\n\n");
+     }
+     printf("\n");
+}

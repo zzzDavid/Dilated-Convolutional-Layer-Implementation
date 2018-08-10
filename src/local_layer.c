@@ -2,6 +2,7 @@
 #include "utils.h"
 #include "im2col.h"
 #include "col2im.h"
+#include "col2im_dilated.h"
 #include "blas.h"
 #include "gemm.h"
 #include <stdio.h>

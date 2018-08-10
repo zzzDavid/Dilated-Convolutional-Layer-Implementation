@@ -10,6 +10,7 @@ extern "C" {
 #include "blas.h"
 #include "im2col.h"
 #include "col2im.h"
+#include "col2im_dilated.h"
 #include "utils.h"
 #include "cuda.h"
 }

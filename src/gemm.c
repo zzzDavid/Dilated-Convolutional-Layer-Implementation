@@ -208,10 +208,10 @@ void gemm_gpu(int TA, int TB, int M, int N, int K, float ALPHA,
     printf("cudaMemcpy completed successfully.\n");
 
 	cublasHandle_t handle;
-	cublasStatus_t stat = cublasCreate(&handle);
+	cublasCreate(&handle);
     printf("handle created successfully\n");
 
-    cublasStatus_t status = cublasSgemm(handle, (TB ? CUBLAS_OP_T : CUBLAS_OP_N), (TA ? CUBLAS_OP_T : CUBLAS_OP_N), N, M, K, &ALPHA, B_gpu, ldb, A_gpu, lda, &BETA, C_gpu, ldc);
+    cublasSgemm(handle, (TB ? CUBLAS_OP_T : CUBLAS_OP_N), (TA ? CUBLAS_OP_T : CUBLAS_OP_N), N, M, K, &ALPHA, B_gpu, ldb, A_gpu, lda, &BETA, C_gpu, ldc);
 
     cudaMemcpy(C_cpu, C_gpu, M*N*sizeof(float), cudaMemcpyDeviceToHost);
 
