@@ -79,7 +79,7 @@ __global__ void col2im_dilated_gpu_kernel(const int n, const float* col_gpu,
 
 void col2im_dilated_gpu(float *col_cpu,
         int channels, int height, int width,
-        int ksize, int stride, int pad, float *im_cpu, int dilate_rate){
+        int ksize, int stride, int pad, int dilate_rate, float *im_cpu){
     // We are going to launch channels * height_col * width_col kernels, each
     // kernel responsible for copying a single-channel grid.
 
@@ -88,7 +88,7 @@ void col2im_dilated_gpu(float *col_cpu,
     int width_col = (width + 2 * pad - dilate_ksize) / stride + 1;   // convolutional layer output width
     int num_kernels = channels * height_col * width_col;             // number of elements in each kernel
 
-    // 在GPU分配内存
+    // allocate memory in GPU
     float *im_gpu, *col_gpu;
     cudaMalloc((void**)&im_gpu, channels*height*width*sizeof(float));
     cudaMalloc((void**)&col_gpu, channels*ksize*ksize*height_col*width_col*sizeof(float));
@@ -100,7 +100,7 @@ void col2im_dilated_gpu(float *col_cpu,
                 channels*height*width, col_gpu, height, width, ksize, pad,
                 stride, height_col,
                 width_col, dilate_rate,channels, im_gpu);
-                
+
      cudaMemcpy(im_cpu, im_gpu, channels*height*width*sizeof(float), cudaMemcpyDeviceToHost);
 }
 

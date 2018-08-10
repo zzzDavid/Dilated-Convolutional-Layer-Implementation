@@ -403,6 +403,7 @@ void visualize(char *cfgfile, char *weightfile)
 void test_dilated_conv_layer();
 void test_dilated_conv_layer_gpu();
 void test_col2im_gpu();
+void test_co2im_cpu();
 
 int main(int argc, char **argv)
 {
@@ -415,6 +416,7 @@ int main(int argc, char **argv)
         //test_dilated_conv_layer();
         //test_dilated_conv_layer_gpu();
         test_col2im_gpu();
+        test_co2im_cpu();
         return 0;
     }
     gpu_index = find_int_arg(argc, argv, "-i", 0);

@@ -49,6 +49,7 @@ int dilated_conv_out_width(dilated_convolutional_layer layer);
 void test_dilated_conv_layer();
 void test_dilated_conv_layer_gpu();
 void test_col2im_gpu();
+void test_co2im_cpu();
 
 #endif
 

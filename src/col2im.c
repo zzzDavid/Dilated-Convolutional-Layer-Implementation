@@ -7,8 +7,10 @@ void col2im_add_pixel(float *im, int height, int width, int channels,
     col -= pad;
 
     if (row < 0 || col < 0 ||
-        row >= height || col >= width) return;
-    im[col + width*(row + height*channel)] += val;
+        row >= height || col >= width){
+            im[col-1 + width*(row-1 + height*channel)] += 0;
+        }
+    im[col-1 + width*(row-1 + height*channel)] += val;
 }
 //This one might be too, can't remember.
 void col2im_cpu(float* data_col,

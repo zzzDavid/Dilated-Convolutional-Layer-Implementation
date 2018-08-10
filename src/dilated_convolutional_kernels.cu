@@ -13,10 +13,6 @@ extern "C" {
 #include "cuda.h"
 }
 
-void col2im_dilated_gpu(float *data_col,int channels, int height, int width, int ksize, int stride, int pad, float *data_im, int dilate_rate);
-void im2col_gpu(float *im,int channels, int height, int width, int ksize, int stride, int pad,float *data_col);
-void im2col_dilated_gpu(float *im_cpu, int channels, int height, int width,int ksize, int stride, int pad, int dilate_rate, float *col_cpu);
-
 __global__ void binarize_kernel(float *x, int n, float *binary);
 
 
@@ -36,17 +32,13 @@ void binarize_weights_gpu(float *weights, int n, int size, float *binary);
 
 void forward_dilated_conv_layer_gpu(dilated_convolutional_layer l, network net)
 {
-    printf("I'm in forward_dilated_conv_layer_gpu!\n");
     //fill_gpu(l.outputs*l.batch, 0, l.output_gpu, 1);
-    printf("Fill GPU success!\n");
     if(l.binary){
-        printf("Binarize in progress!\n");
         binarize_weights_gpu(l.weights_gpu, l.n, l.c/l.groups*l.size*l.size, l.binary_weights_gpu);
         swap_binary(&l);
     }
 
     if(l.xnor){
-        printf("Xnor construction in progress!\n");
         binarize_weights_gpu(l.weights_gpu, l.n, l.c/l.groups*l.size*l.size, l.binary_weights_gpu);
         swap_binary(&l);
         binarize_gpu(net.input_gpu, l.c*l.h*l.w*l.batch, l.binary_input_gpu);
@@ -84,60 +76,9 @@ void forward_dilated_conv_layer_gpu(dilated_convolutional_layer l, network net)
             if (l.size == 1){
                 b = im;
             } else {
-                printf("I'm going to call im2col_dilated_gpu!\n");
-                //-----------print im2col input-----------------------------------------------------
-                printf("image = \n");
-                float *temp = im;
-                for (int i = 1; i <= l.inputs; i++)
-                {
-                    if (i % 10 == 0)
-                    {
-                        printf("%d\t", (int)*temp);
-                        printf("\n");
-                        temp = temp + 1;
-                    }else{
-                        printf("%d\t", (int)*temp);
-                        temp = temp + 1;
-                    }
-                    //printf("i = %d\t", i);
-                }
-                //-----------------------------------------------------------------------------------
                 im2col_dilated_gpu(im, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, l.dilate_rate, b);
-                //------------print im2col output-----------------------------------------------------
-                printf("image_col = \n");
-                temp = b;
-                for (int i = 1; i <= 36*12; i++)
-                {
-                    if (i % 36 == 0)
-                    {
-                        printf("%d  ", (int)*temp);
-                        printf("\n");
-                        temp = temp + 1;
-                    }else{
-                        printf("%d  ", (int)*temp);
-                        temp = temp + 1;
-                    }
-                }
-                //-------------------------------------------------------------------------------------
-
             }
-            printf("I'm going to call gemm_gpu!\n");
             gemm_gpu(0,0,m,n,k,1,a,k,b,n,1,c,n);
-
-            // print gemm output
-            printf("gemm_gpu output = \n");
-            float *temp = c;
-            for (int i = 1; i <= l.outputs; i++)
-            {
-                if (i % 2 == 0)
-                {
-                    printf("%f\t", *temp);
-                    printf("\n");
-                    temp = temp + 1;
-                }else{
-                    printf("%f\t", *temp);
-                    temp = temp + 1;}
-            }
         }
 
     }
@@ -243,7 +184,7 @@ void backward_dilated_conv_layer_gpu(convolutional_layer l, network net)
                 gemm_gpu(1,0,n,k,m,1,a,n,b,k,0,c,k);
 
                 if (l.size != 1) {
-                    col2im_dilated_gpu(net.workspace, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, imd, l.dilate_rate);
+                    col2im_dilated_gpu(net.workspace, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, l.dilate_rate, imd);
                 }
                 if(l.binary || l.xnor) {
                     swap_binary(&l);
@@ -406,7 +347,6 @@ void test_col2im_gpu()
     int dilate_ksize = (dilate_rate - 1) * (ksize + 1) + ksize;
     int height_col = (height + 2 * pad - dilate_ksize) / stride + 1; // convolutional layer output height
     int width_col = (width + 2 * pad - dilate_ksize) / stride + 1;   // convolutional layer output width
-//    int num_kernels = channels * height_col * width_col;             // number of elements in each kernel
     printf("col_cpu = \n");
     for (int i=0; i < ksize * ksize * channels; i++)
     {
@@ -417,7 +357,7 @@ void test_col2im_gpu()
     	 printf("\n");
     }
     printf("\n");
-    col2im_dilated_gpu(col_cpu, channels, height, width, ksize, stride, pad, im_cpu, dilate_rate);
+    col2im_dilated_gpu(col_cpu, channels, height, width, ksize, stride, pad, dilate_rate, im_cpu);
     printf("im_cpu = \n");
      for (int i=0; i < height; i++)
      {
