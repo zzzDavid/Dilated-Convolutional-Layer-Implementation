@@ -182,9 +182,28 @@ void backward_dilated_conv_layer_gpu(convolutional_layer l, network net)
                 }
 
                 gemm_gpu(1,0,n,k,m,1,a,n,b,k,0,c,k);
-
+                //------------------------------------------------------------
+                /*printf("GPU input of col2im_dilated = \n");
+                float input[n*k];
+                cudaMemcpy(input, c, n*k*sizeof(float),cudaMemcpyDeviceToHost);
+                for (int i=0; i<n; i++){
+                    for (int j=0; j<k; j++){
+                        printf("%d ",(int)input[i*k+j]);
+                    }printf("\n");
+                }printf("\n");*/
+                //------------------------------------------------------------
                 if (l.size != 1) {
                     col2im_dilated_gpu(net.workspace, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, l.dilate_rate, imd);
+                //-----------------------------------------------------------    
+                    /*printf("GPU output of col2im_dilated = \n");
+                    float output[l.h*l.c*l.w];
+                    cudaMemcpy(output, imd, l.h*l.w*l.c, cudaMemcpyDeviceToHost);
+                    for (int i=0; i<l.h*l.c; i++){
+                        for (int j=0; j<l.w; j++){
+                            printf("%f\t",output[i*l.w+j]);
+                        }printf("\n");
+                    }printf("\n");*/
+                //------------------------------------------------------------
                 }
                 if(l.binary || l.xnor) {
                     swap_binary(&l);
@@ -254,13 +273,31 @@ void update_dilated_conv_layer_gpu(layer l, update_args a)
     }
 }
 
-void test_dilated_conv_layer_gpu()
+
+
+void test_dconv_backprop_gpu()
 {
-    printf("Entering test_dilated_conv_layer()\n");
-    dilated_convolutional_layer l = make_dilated_conv_layer(1, 10, 10, 3, 1, 1, 2, 1, 0, LEAKY, 0, 0, 0, 0, 2);
-    // batch = 1, h = 10, w = 10, c = 3, n = 1, group = 1, size = 2, stride = 1, padding = 0, activation = LEAKY, 
-    // batch_nomarlize = 0, binary = 0, xnor = 0, adam = 0, dilate_rate = 2
-    printf("make dilated conv layer success!\n");
+    
+    int batch = 1;
+    int h = 10;
+    int w = 10;
+    int c = 3;
+    int n = 1;
+    int groups = 1;
+    int size = 3;
+    int stride = 1;
+    int padding = 3;
+    ACTIVATION activation = LEAKY;
+    int batch_normalize = 0;
+    int binary = 0;
+    int xnor = 0;
+    int adam = 0;
+    int dilate_rate = 2;
+    
+    // data: 10*10*3
+    // weights: 3*3*3 -> 7*7*3, padding = 3
+    // output: 10*10*3
+    // delta: 10*10*3
     float data[] = {
         1,1,1,1,1,1,1,1,1,1,
         2,2,2,2,2,2,2,2,2,2,
@@ -294,78 +331,71 @@ void test_dilated_conv_layer_gpu()
         8,8,8,8,8,8,8,8,8,8,
         9,9,9,9,9,9,9,9,9,9,
         9,9,9,9,9,9,9,9,9,9};
-
-    float w[] = {
-        1,1,1,1,1,1,1,1,1,1,1,1
-    };
-    float work[36*12] = {0};
-    float out[] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+    float weights[27] = {0};
+        for(int i=0; i<27; i++) weights[i] = 1;
+    float delta[10*10*1] = {0};
+        for (int i=0; i<10*10*1; i++) delta[i] = i+1;
+    float weight_updates[3*3*3];
+        for (int i=0; i<3*3*3; i++) weight_updates[i] = 0;
+    float upper_delta[10*10*3];
+        for (int i=0; i<10*10*3; i++) upper_delta[i] = 0;
+    float work[3*3*3*10*10*1] = {0};
+        for (int i=0; i<3*3*3*10*10*1; i++) work[i] = 0;
+    float output[10*10*1];
+        for (int i=0; i<10*10*1; i++) output[i] = 0;
+    
+    
+    dilated_convolutional_layer l = make_dilated_conv_layer(
+        batch,h,w,c,n,groups,size,stride,padding,activation, batch_normalize, binary, xnor, adam, dilate_rate);
+    
     network net = *make_network(1);
     net.layers = &l;
-    net.input_gpu = data;
-    net.workspace = work;
-    //net.workspace = (float*) calloc(1, l.nweights*l.outputs);
-    l.weights_gpu = w;
-    l.output_gpu = out;
+
+    cudaMalloc((void**)&l.output_gpu, 10*10*1*sizeof(float));
+	cudaMalloc((void**)&l.weights_gpu, 3*3*3*sizeof(float));
+	cudaMalloc((void**)&l.weight_updates_gpu, 3*3*3*sizeof(float));
+	cudaMalloc((void**)&l.delta_gpu, 10*10*1*sizeof(float));
+	cudaMalloc((void**)&net.input_gpu, 10*10*3*sizeof(float));
+	cudaMalloc((void**)&net.workspace, 3*3*3*10*10*sizeof(float));
+	cudaMalloc((void**)&net.delta_gpu, 10*10*3*sizeof(float));
+
+    cudaMemcpy(l.output_gpu, output, 10*10*1*sizeof(float),cudaMemcpyHostToDevice);
+    cudaMemcpy(l.weights_gpu, weights, 3*3*3*sizeof(float),cudaMemcpyHostToDevice);
+    cudaMemcpy(l.weight_updates_gpu, weight_updates, 3*3*3*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(l.delta_gpu, delta, 10*10*1*sizeof(float),cudaMemcpyHostToDevice);
+    cudaMemcpy(net.input_gpu, data, 10*10*3*sizeof(float),cudaMemcpyHostToDevice);
+    cudaMemcpy(net.workspace, work, 3*3*3*10*10*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(net.delta_gpu, upper_delta, 10*10*3*sizeof(float),cudaMemcpyHostToDevice);
     forward_dilated_conv_layer_gpu(l, net);
+
+    printf("forward dconv gpu complete.\n");
+
+    cudaMemcpy(output, l.output_gpu, 10*10*sizeof(float),cudaMemcpyDeviceToHost);
     
-    float *temp = out;
-    cudaMemcpy(temp, l.output_gpu, l.outputs*sizeof(float),cudaMemcpyDeviceToHost);
-    printf("Output:\n");
-    printf("Number of output: %d\n", l.outputs);
-    for (int i = 1; i <= l.outputs; i++)
-    {
-        if (i % 6 == 0)
-        {
-            printf("%f\t", *temp);
-            printf("\n");
-            temp = temp + 1;
-        }else{
-            printf("%f\t", *temp);
-            temp = temp + 1;
+    printf("GPU Output = 10*10*1\n");
+    for(int i=0; i<10; i++){
+        for(int j=0; j<10; j++){
+            printf("%f\t",output[i*10+j]);
+        }printf("\n");
+    }printf("\n");
+
+    backward_dilated_conv_layer_gpu(l,net);
+    // l.weight_updates, net.delta
+    cudaMemcpy(weight_updates, l.weight_updates_gpu, 3*3*3*sizeof(float),cudaMemcpyDeviceToHost);
+    printf("GPU Weight Updates = \n");
+    for(int i=0; i<3; i++){
+        for(int j=0; j<3*3; j++){
+            printf("%f\t", weight_updates[i*3+j]);
         }
-        //printf("i = %d\t", i);
-    }
-    printf("test complete successfully.\n");
+        printf("\n");
+    }printf("\n");
 
-}
-
-void test_col2im_gpu()
-{
-    float col[4*36] = {0};
-	float im[9] = {0};
-	for(int i=0; i<4*36; i++) col[i] = i+1;
-	float *col_cpu = col;
-	int channels = 1;
-	int height = 10;
-	int width = 10;
-	int ksize = 2;
-	int stride = 1;
-	int pad = 0;
-	float *im_cpu = im;
-    int dilate_rate = 2;
-    int dilate_ksize = (dilate_rate - 1) * (ksize + 1) + ksize;
-    int height_col = (height + 2 * pad - dilate_ksize) / stride + 1; // convolutional layer output height
-    int width_col = (width + 2 * pad - dilate_ksize) / stride + 1;   // convolutional layer output width
-    printf("col_cpu = \n");
-    for (int i=0; i < ksize * ksize * channels; i++)
-    {
-    	for (int j=0; j < height_col*width_col*channels; j++)
-    	{
-    		printf("%d ", (int)col_cpu[i*height_col*width_col*channels+j]);
-    	 }
-    	 printf("\n");
-    }
-    printf("\n");
-    col2im_dilated_gpu(col_cpu, channels, height, width, ksize, stride, pad, dilate_rate, im_cpu);
-    printf("im_cpu = \n");
-     for (int i=0; i < height; i++)
-     {
-    	 for (int j=0; j < width; j++)
-    	 {
-    		 printf("%d\t", (int)im_cpu[i*width+j]);
-    	 }
-    	 printf("\n\n");
-     }
-     printf("\n");
+    printf("GPU Upper layer delta = \n");
+    cudaMemcpy(upper_delta, net.delta_gpu, 10*10*3*sizeof(float),cudaMemcpyDeviceToHost);
+    for(int i=0; i<10*3; i++){
+        for(int j=0; j<10; j++){
+            printf("%f\t", upper_delta[i*10+j]);
+        }
+        printf("\n");
+    }printf("\n");
 }

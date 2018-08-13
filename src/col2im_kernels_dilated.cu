@@ -65,21 +65,20 @@ __global__ void col2im_dilated_gpu_kernel(const int n, const float* col_gpu,
         int d_coeff_w_col = (1 - stride * height_col * width_col);
         for (int h_col = h_col_start; h_col < h_col_end; ++h_col) {
             for (int w_col = w_col_start; w_col < w_col_end; ++w_col) {
-                int row = (d_offset + h_col * d_coeff_h_col + w_col * d_coeff_w_col)/(height_col*width_col*channels);
+                int row = (d_offset + h_col * d_coeff_h_col + w_col * d_coeff_w_col)/(height_col*width_col) + 1;
                 if(isvalid(d_ksize, dilate_rate, row)){
-                    val += get_col_gpu_pixel(row, d_ksize, dilate_rate, ksize, height_col, width_col, stride, h_col, w_col, col_gpu);
+                    val += get_col_gpu_pixel(row, d_ksize, ksize, dilate_rate, height_col, width_col, stride, h_col, w_col, col_gpu);
                 }else{
                     val += 0;
                 }
             }
         }
-        im_gpu[index-1] += val;
+        im_gpu[index] += val;
     }
 }
-
-void col2im_dilated_gpu(float *col_cpu,
+void col2im_dilated_gpu(float *col_gpu,
         int channels, int height, int width,
-        int ksize, int stride, int pad, int dilate_rate, float *im_cpu){
+        int ksize, int stride, int pad, int dilate_rate, float *im_gpu){
     // We are going to launch channels * height_col * width_col kernels, each
     // kernel responsible for copying a single-channel grid.
 
@@ -88,19 +87,11 @@ void col2im_dilated_gpu(float *col_cpu,
     int width_col = (width + 2 * pad - dilate_ksize) / stride + 1;   // convolutional layer output width
     int num_kernels = channels * height_col * width_col;             // number of elements in each kernel
 
-    // allocate memory in GPU
-    float *im_gpu, *col_gpu;
-    cudaMalloc((void**)&im_gpu, channels*height*width*sizeof(float));
-    cudaMalloc((void**)&col_gpu, channels*ksize*ksize*height_col*width_col*sizeof(float));
-
-    cudaMemcpy(col_gpu, col_cpu, channels*ksize*ksize*height_col*width_col*sizeof(float), cudaMemcpyHostToDevice);
-
     col2im_dilated_gpu_kernel<<<(num_kernels+BLOCK-1)/BLOCK,
         BLOCK>>>(
                 channels*height*width, col_gpu, height, width, ksize, pad,
                 stride, height_col,
                 width_col, dilate_rate,channels, im_gpu);
 
-     cudaMemcpy(im_cpu, im_gpu, channels*height*width*sizeof(float), cudaMemcpyDeviceToHost);
 }
 

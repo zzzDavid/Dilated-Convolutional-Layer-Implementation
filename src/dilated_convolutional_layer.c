@@ -9,22 +9,17 @@
 
 void binarize_cpu(float* input, int n, float* binary);
 
-/*
-**  TODO:
-**  现在还不能从cfg文件中得到dilate rate
-**  BATCH NORMALIZATION
-*/
 int dilated_conv_out_height(dilated_convolutional_layer l)
 {
-    l.size = (l.dilate_rate - 1) * (l.size + 1) + l.size;
+    int dsize = (l.dilate_rate - 1) * (l.size + 1) + l.size;
     //printf("new kernel size = %d\n", l.size);
-    return (l.h + 2*l.pad - l.size) / l.stride + 1;
+    return (l.h + 2*l.pad - dsize) / l.stride + 1;
 }
 
 int dilated_conv_out_width(dilated_convolutional_layer l)
 {
-    l.size = (l.dilate_rate - 1) * (l.size + 1) + l.size;
-    return (l.w + 2*l.pad - l.size) / l.stride + 1;
+    int dsize = (l.dilate_rate - 1) * (l.size + 1) + l.size;
+    return (l.w + 2*l.pad - dsize) / l.stride + 1;
 }
 
 image get_dilated_conv_image(dilated_convolutional_layer l)
@@ -160,9 +155,7 @@ dilated_convolutional_layer make_dilated_conv_layer(int batch, int h, int w, int
     
     for(i = 0; i < l.nweights; ++i) l.weights[i] = scale*rand_normal();
     int out_w = dilated_conv_out_width(l);
-    printf("out_w = %d\n", out_w);
     int out_h = dilated_conv_out_height(l);
-    printf("out_h = %d\n", out_h);
     l.out_h = out_h;
     l.out_w = out_w;
     l.out_c = n;
@@ -213,9 +206,9 @@ dilated_convolutional_layer make_dilated_conv_layer(int batch, int h, int w, int
     }
 
 #ifdef GPU
-    l.forward_gpu = forward_convolutional_layer_gpu;
-    l.backward_gpu = backward_convolutional_layer_gpu;
-    l.update_gpu = update_convolutional_layer_gpu;
+    l.forward_gpu = forward_dilated_conv_layer_gpu;
+    l.backward_gpu = backward_dilated_conv_layer_gpu;
+    l.update_gpu = update_dilated_conv_layer_gpu;
 
     if(gpu_index >= 0){
         if (adam) {
@@ -297,13 +290,32 @@ void denormalize_dilated_conv_layer(dilated_convolutional_layer l)
 }
 
 
-void test_dilated_conv_layer()
+
+void test_dconv_backprop_cpu()
 {
-    printf("Entering test_dilated_conv_layer()\n");
-    dilated_convolutional_layer l = make_dilated_conv_layer(1, 10, 10, 3, 1, 1, 2, 1, 0, LEAKY, 0, 0, 0, 0, 2);
-    // batch = 1, h = 10, w = 10, c = 3, n = 1, group = 1, size = 2, stride = 1, padding = 0, activation = LEAKY, 
-    // batch_nomarlize = 0, binary = 0, xnor = 0, adam = 0, dilate_rate = 2
-    printf("make dilated conv layer success!\n");
+    
+    int batch = 1;
+    int h = 10;
+    int w = 10;
+    int c = 3;
+    int n = 1;
+    int groups = 1;
+    int size = 3;
+    int stride = 1;
+    int padding = 3;
+    ACTIVATION activation = LEAKY;
+    int batch_normalize = 0;
+    int binary = 0;
+    int xnor = 0;
+    int adam = 0;
+    int dilate_rate = 2;
+    
+    dilated_convolutional_layer l = make_dilated_conv_layer(
+        batch,h,w,c,n,groups,size,stride,padding,activation, batch_normalize, binary, xnor, adam, dilate_rate);
+    // data: 10*10*3
+    // weights: 3*3*3 -> 7*7*3, padding = 3
+    // output: 10*10*3
+    // delta: 10*10*3
     float data[] = {
         1,1,1,1,1,1,1,1,1,1,
         2,2,2,2,2,2,2,2,2,2,
@@ -337,79 +349,50 @@ void test_dilated_conv_layer()
         8,8,8,8,8,8,8,8,8,8,
         9,9,9,9,9,9,9,9,9,9,
         9,9,9,9,9,9,9,9,9,9};
-
-    float w[] = {
-        1,1,1,1,1,1,1,1,1,1,1,1
-    };
+    float weights[27] = {0};
+    for(int i=0; i<27; i++) weights[i] = 1;
+    float delta[10*10*3] = {0};
+    for (int i=0; i<10*10*3; i++) delta[i] = i+1;
+    float weight_updates[3*3*3];
+    float upper_delta[10*10*3];
+    for (int i=0; i<10*10*3; i++) upper_delta[i] = 0;
+    float work[3*3*3*10*10*3] = {0};
     network net = *make_network(1);
-    printf("make network success!\n");
     net.layers = &l;
     net.input = data;
-    net.workspace = calloc(1, l.outputs);
-    l.weights = w;
-    printf("I'm going to call forward dilated conv!\n");
-    forward_dilated_conv_layer(l, net);
-    printf("forward dilated conv returned!\n");
-    
-    float *temp = l.output;
-    printf("Output:\n");
-    printf("Number of output: %d\n", l.outputs);
-    for (int i = 1; i <= l.outputs; i++)
-    {
-        if (i % 6 == 0)
-        {
-            printf("%f\t", *temp);
-            printf("\n");
-            temp = temp + 1;
-        }else{
-            printf("%f\t", *temp);
-            temp = temp + 1;
-        }
-        //printf("i = %d\t", i);
-    }
-}
+    net.workspace = work;
+    l.weights = weights;
+    l.weight_updates = weight_updates;
+    l.delta = delta;
+    net.delta = upper_delta;
 
-void test_co2im_cpu()
-{
-    
-    float col[4*36] = {0};
-    float im[100];
-    for(int i=0; i<100; i++)
-    	im[i] = 0;
-	for(int i=0; i<4*36; i++) col[i] = i+1;
-	float *col_cpu = col;
-	int channels = 1;
-	int height = 10;
-	int width = 10;
-	int ksize = 2;
-	int stride = 1;
-	int pad = 0;
-	float *im_cpu = im;
-    int dilate_rate = 2;
-    int dilate_ksize = (dilate_rate - 1) * (ksize + 1) + ksize;
-    int height_col = (height + 2 * pad - dilate_ksize) / stride + 1; // convolutional layer output height
-    int width_col = (width + 2 * pad - dilate_ksize) / stride + 1;   // convolutional layer output width
-    printf("col_cpu = \n");
-    for (int i=0; i < ksize * ksize * channels; i++)
-    {
-    	for (int j=0; j < height_col*width_col*channels; j++)
-    	{
-    		printf("%d ", (int)col_cpu[i*height_col*width_col*channels+j]);
-    	 }
-    	 printf("\n");
-    }
-    printf("\n");
-    col2im_dilated_cpu(col_cpu, channels, height, width, ksize, stride, pad, dilate_rate, im_cpu);
-    printf("im_cpu = \n");
-     for (int i=0; i < height; i++)
-     {
-    	 for (int j=0; j < width; j++)
-    	 {
-    		 printf("%d\t", (int)im_cpu[i*width+j]);
-    	 }
-    	 printf("\n\n");
-     }
-     printf("\n");
+    forward_dilated_conv_layer(l, net);
+    printf("Output = 10*10*1\n");
+    for(int i=0; i<10; i++){
+        for(int j=0; j<10; j++){
+            printf("%f\t",l.output[i*10+j]);
+        }printf("\n");
+    }printf("\n");
+
+    backward_dilated_conv_layer(l,net);
+    // l.weight_updates, net.delta
+    printf("Weight Updates = \n");
+    float * temp1 = l.weight_updates;
+    for(int i=0; i<3; i++){
+        for(int j=0; j<3*3; j++){
+            printf("%f\t", temp1[i*3+j]);
+        }
+        printf("\n");
+    }printf("\n");
+
+    printf("Upper layer delta = \n");
+    float * temp2 = net.delta;
+    for(int i=0; i<10*3; i++){
+        for(int j=0; j<10; j++){
+            printf("%f\t", temp2[i*10+j]);
+        }
+        printf("\n");
+    }printf("\n");
 }
 
 void resize_dilated_conv_layer(dilated_convolutional_layer *l, int w, int h)
@@ -541,9 +524,24 @@ void backward_dilated_conv_layer(dilated_convolutional_layer l, network net)
 
                 gemm(1,0,n,k,m,1,a,n,b,k,0,c,k);       // workspace = weight matrix' * delta  matrix
 
+                /*printf("CPU input of col2im_dilated = \n");
+                for (int i=0; i<n; i++){
+                    for (int j=0; j<k; j++){
+                        printf("%d ",(int)c[i*k+j]);
+                    }printf("\n");
+                }printf("\n");*/
+
+
                 if (l.size != 1) {
                     col2im_dilated_cpu(net.workspace, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, l.dilate_rate, imd);
                     // input: workspace, output: imd(net.delta)
+                
+                /*printf("CPU output of col2im_dilated = \n");
+                for (int i=0; i<l.h*l.c; i++){
+                    for (int j=0; j<l.w; j++){
+                        printf("%f\t",imd[i*l.w+j]);
+                    }printf("\n");
+                }printf("\n");*/
                 }
             }
         }

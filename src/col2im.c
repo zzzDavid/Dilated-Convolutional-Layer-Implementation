@@ -6,9 +6,9 @@ void col2im_add_pixel(float *im, int height, int width, int channels,
     row -= pad;
     col -= pad;
 
-    if (row < 0 || col < 0 ||
-        row >= height || col >= width){
-            im[col-1 + width*(row-1 + height*channel)] += 0;
+    if ((row-1) < 0 || (col-1) < 0 ||
+        (row-1) >= height || (col-1) >= width){
+            return;
         }
     im[col-1 + width*(row-1 + height*channel)] += val;
 }

@@ -170,66 +170,18 @@ void gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA,
 #include <math.h>
 
 void gemm_gpu(int TA, int TB, int M, int N, int K, float ALPHA, 
-        float *A_cpu, int lda, 
-        float *B_cpu, int ldb,
+        float *A_gpu, int lda, 
+        float *B_gpu, int ldb,
         float BETA,
-        float *C_cpu, int ldc)
+        float *C_gpu, int ldc)
 {
-    printf("I'm in gemm_cpu.\n");
-    /*float weight[12] = {1,1,1,1,1,1,1,1,1,1,1,1};
-    A_cpu = weight;
-    float data[12*36] = {
-    		3,3,3,3,3,3,4,4,4,4,4,4,5,5,5,5,5,5,6,6,6,6,6,6,7,7,7,7,7,7,8,8,8,8,8,8,
-    		3,3,3,3,3,3,4,4,4,4,4,4,5,5,5,5,5,5,6,6,6,6,6,6,7,7,7,7,7,7,8,8,8,8,8,8,
-    		5,5,5,5,5,5,6,6,6,6,6,6,7,7,7,7,7,7,8,8,8,8,8,8,9,9,9,9,9,9,9,9,9,9,9,9,
-    		5,5,5,5,5,5,6,6,6,6,6,6,7,7,7,7,7,7,8,8,8,8,8,8,9,9,9,9,9,9,9,9,9,9,9,9,
-    		3,3,3,3,3,3,4,4,4,4,4,4,5,5,5,5,5,5,6,6,6,6,6,6,7,7,7,7,7,7,8,8,8,8,8,8,
-    		3,3,3,3,3,3,4,4,4,4,4,4,5,5,5,5,5,5,6,6,6,6,6,6,7,7,7,7,7,7,8,8,8,8,8,8,
-    		5,5,5,5,5,5,6,6,6,6,6,6,7,7,7,7,7,7,8,8,8,8,8,8,9,9,9,9,9,9,9,9,9,9,9,9,
-    		5,5,5,5,5,5,6,6,6,6,6,6,7,7,7,7,7,7,8,8,8,8,8,8,9,9,9,9,9,9,9,9,9,9,9,9,
-    		3,3,3,3,3,3,4,4,4,4,4,4,5,5,5,5,5,5,6,6,6,6,6,6,7,7,7,7,7,7,8,8,8,8,8,8,
-    		3,3,3,3,3,3,4,4,4,4,4,4,5,5,5,5,5,5,6,6,6,6,6,6,7,7,7,7,7,7,8,8,8,8,8,8,
-    		5,5,5,5,5,5,6,6,6,6,6,6,7,7,7,7,7,7,8,8,8,8,8,8,9,9,9,9,9,9,9,9,9,9,9,9,
-    		5,5,5,5,5,5,6,6,6,6,6,6,7,7,7,7,7,7,8,8,8,8,8,8,9,9,9,9,9,9,9,9,9,9,9,9
-    };
-    B_cpu = data;
-    float out[36] = {0};
-    C_cpu = out;*/
-
-    float *A_gpu, *B_gpu, *C_gpu;
-
-    cudaMalloc((void**)&A_gpu, M*K*sizeof(float));
-    cudaMalloc((void**)&B_gpu, K*N*sizeof(float));
-    cudaMalloc((void**)&C_gpu, M*N*sizeof(float));
-    printf("cudaMalloc completed successfully.\n");
-
-    cudaMemcpy(A_gpu, A_cpu, M*K*sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(B_gpu, B_cpu, K*N*sizeof(float), cudaMemcpyHostToDevice);
-    printf("cudaMemcpy completed successfully.\n");
+    //printf("I'm in gemm_gpu\n");
 
 	cublasHandle_t handle;
 	cublasCreate(&handle);
-    printf("handle created successfully\n");
-
     cublasSgemm(handle, (TB ? CUBLAS_OP_T : CUBLAS_OP_N), (TA ? CUBLAS_OP_T : CUBLAS_OP_N), N, M, K, &ALPHA, B_gpu, ldb, A_gpu, lda, &BETA, C_gpu, ldc);
-
-    cudaMemcpy(C_cpu, C_gpu, M*N*sizeof(float), cudaMemcpyDeviceToHost);
-
     cublasDestroy(handle);
-    float *temp = C_cpu;
-    for (int i = 1; i <= 36; i++)
-    {
-        if (i % 6 == 0)
-        {
-            printf("%f\t", *temp);
-            printf("\n");
-            temp = temp + 1;
-        }else{
-            printf("%f\t", *temp);
-            temp = temp + 1;
-        }
-    }
-    printf("cudaSgemm complete.\n");
+    //printf("gemm_gpu completed successfully.\n");
 }
 
 #include <stdio.h>

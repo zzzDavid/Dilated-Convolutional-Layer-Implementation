@@ -46,10 +46,8 @@ image get_dilated_conv_weight(dilated_convolutional_layer layer, int i);
 int dilated_conv_out_height(dilated_convolutional_layer layer);
 int dilated_conv_out_width(dilated_convolutional_layer layer);
 
-void test_dilated_conv_layer();
-void test_dilated_conv_layer_gpu();
-void test_col2im_gpu();
-void test_co2im_cpu();
+void test_dconv_backprop_gpu();
+void test_dconv_backprop_cpu();
 
 #endif
 
