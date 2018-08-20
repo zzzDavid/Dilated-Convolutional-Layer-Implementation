@@ -290,111 +290,6 @@ void denormalize_dilated_conv_layer(dilated_convolutional_layer l)
 }
 
 
-
-void test_dconv_backprop_cpu()
-{
-    
-    int batch = 1;
-    int h = 10;
-    int w = 10;
-    int c = 3;
-    int n = 1;
-    int groups = 1;
-    int size = 3;
-    int stride = 1;
-    int padding = 3;
-    ACTIVATION activation = LEAKY;
-    int batch_normalize = 0;
-    int binary = 0;
-    int xnor = 0;
-    int adam = 0;
-    int dilate_rate = 2;
-    
-    dilated_convolutional_layer l = make_dilated_conv_layer(
-        batch,h,w,c,n,groups,size,stride,padding,activation, batch_normalize, binary, xnor, adam, dilate_rate);
-    // data: 10*10*3
-    // weights: 3*3*3 -> 7*7*3, padding = 3
-    // output: 10*10*3
-    // delta: 10*10*3
-    float data[] = {
-        1,1,1,1,1,1,1,1,1,1,
-        2,2,2,2,2,2,2,2,2,2,
-        3,3,3,3,3,3,3,3,3,3,
-        4,4,4,4,4,4,4,4,4,4,
-        5,5,5,5,5,5,5,5,5,5,
-        6,6,6,6,6,6,6,6,6,6,
-        7,7,7,7,7,7,7,7,7,7,
-        8,8,8,8,8,8,8,8,8,8,
-        9,9,9,9,9,9,9,9,9,9,
-        9,9,9,9,9,9,9,9,9,9,
-
-        1,1,1,1,1,1,1,1,1,1,
-        2,2,2,2,2,2,2,2,2,2,
-        3,3,3,3,3,3,3,3,3,3,
-        4,4,4,4,4,4,4,4,4,4,
-        5,5,5,5,5,5,5,5,5,5,
-        6,6,6,6,6,6,6,6,6,6,
-        7,7,7,7,7,7,7,7,7,7,
-        8,8,8,8,8,8,8,8,8,8,
-        9,9,9,9,9,9,9,9,9,9,
-        9,9,9,9,9,9,9,9,9,9,
-
-        1,1,1,1,1,1,1,1,1,1,
-        2,2,2,2,2,2,2,2,2,2,
-        3,3,3,3,3,3,3,3,3,3,
-        4,4,4,4,4,4,4,4,4,4,
-        5,5,5,5,5,5,5,5,5,5,
-        6,6,6,6,6,6,6,6,6,6,
-        7,7,7,7,7,7,7,7,7,7,
-        8,8,8,8,8,8,8,8,8,8,
-        9,9,9,9,9,9,9,9,9,9,
-        9,9,9,9,9,9,9,9,9,9};
-    float weights[27] = {0};
-    for(int i=0; i<27; i++) weights[i] = 1;
-    float delta[10*10*3] = {0};
-    for (int i=0; i<10*10*3; i++) delta[i] = i+1;
-    float weight_updates[3*3*3];
-    float upper_delta[10*10*3];
-    for (int i=0; i<10*10*3; i++) upper_delta[i] = 0;
-    float work[3*3*3*10*10*3] = {0};
-    network net = *make_network(1);
-    net.layers = &l;
-    net.input = data;
-    net.workspace = work;
-    l.weights = weights;
-    l.weight_updates = weight_updates;
-    l.delta = delta;
-    net.delta = upper_delta;
-
-    forward_dilated_conv_layer(l, net);
-    printf("Output = 10*10*1\n");
-    for(int i=0; i<10; i++){
-        for(int j=0; j<10; j++){
-            printf("%f\t",l.output[i*10+j]);
-        }printf("\n");
-    }printf("\n");
-
-    backward_dilated_conv_layer(l,net);
-    // l.weight_updates, net.delta
-    printf("Weight Updates = \n");
-    float * temp1 = l.weight_updates;
-    for(int i=0; i<3; i++){
-        for(int j=0; j<3*3; j++){
-            printf("%f\t", temp1[i*3+j]);
-        }
-        printf("\n");
-    }printf("\n");
-
-    printf("Upper layer delta = \n");
-    float * temp2 = net.delta;
-    for(int i=0; i<10*3; i++){
-        for(int j=0; j<10; j++){
-            printf("%f\t", temp2[i*10+j]);
-        }
-        printf("\n");
-    }printf("\n");
-}
-
 void resize_dilated_conv_layer(dilated_convolutional_layer *l, int w, int h)
 {
     l->w = w;
@@ -508,8 +403,8 @@ void backward_dilated_conv_layer(dilated_convolutional_layer l, network net)
             if(l.size == 1){
                 b = im;
             } else {
-                im2col_cpu(im, l.c/l.groups, l.h, l.w, 
-                        l.size, l.stride, l.pad, b);
+                im2col_dilated_cpu(im, l.c/l.groups, l.h, l.w, 
+                        l.size, l.stride, l.pad, b, l.dilate_rate);
             }
 
             gemm(0,1,m,n,k,1,a,k,b,k,1,c,n);    // c (weight_update) = x (*) dL/dh
@@ -577,3 +472,183 @@ image get_dilated_conv_weight(dilated_convolutional_layer l, int i)
     return float_to_image(w,h,c,l.weights+i*h*w*c);
 }
 
+void test_dconv_forward_cpu()
+{
+    
+    int batch = 100;
+    int h = 32;
+    int w = 32;
+    int c = 3;
+    int n = 32;
+    int groups = 1;
+    int size = 5;
+    int stride = 1;
+    int padding = 5;
+    ACTIVATION activation = LEAKY;
+    int batch_normalize = 0;
+    int binary = 0;
+    int xnor = 0;
+    int adam = 0;
+    int dilate_rate = 2;
+    
+    dilated_convolutional_layer l = make_dilated_conv_layer(
+        batch,h,w,c,n,groups,size,stride,padding,activation, batch_normalize, binary, xnor, adam, dilate_rate);
+    
+    network net = *make_network(1);
+    net.layers = &l;
+
+	net.input = (float*) calloc (batch*h*w*c, sizeof(float));
+	l.weights = (float*) calloc (size*size*c*n, sizeof(float));
+    l.output = (float*) calloc (batch*l.out_c*l.out_h*l.out_w, sizeof(float));
+    net.workspace = (float*) calloc (l.workspace_size, sizeof(float));
+    
+    FILE *fp;
+	    if((fp=fopen("caffe_forward_input.txt","r"))==NULL){
+			printf("Open file caffe_forward_input failed.\n");
+			exit(0);
+		}
+
+		for(int i=0; i<h*w*c*batch; i++){
+			fscanf(fp,"%f,", &net.input[i]);
+		}
+		fclose(fp);
+
+
+		FILE *fin;
+		if ((fin = fopen("caffe_forward_weights.txt","r"))==NULL){
+			printf("Open file caffe_forward_weights failed.\n");
+			exit(0);
+		}
+		//fscanf(fin, "%*[^\n]\n", NULL,NULL);
+		for(int i=0; i<size*size*c*n; i++){
+			fscanf(fin, "%f,", &l.weights[i]);
+		}
+		fclose(fin);
+    printf("finish reading all inputs.\n");
+
+   
+    forward_dilated_conv_layer(l, net);
+
+    printf("forward dconv gpu complete.\n");
+
+    
+    FILE *f3;
+	if((f3 = fopen("darknet_output.txt", "a"))==NULL){
+		printf("Error opening file darknet_output\n");
+		exit(0);
+	}
+	for (int i=0; i<l.out_c*l.out_h*l.out_w*batch; i++){
+		fprintf(f3, "%e, ", l.output[i]);
+		if (i%10 == 9) fprintf(f3,"\n");
+	}
+    fclose(f3);
+    
+    printf("test completed successfully.\n");
+}
+
+
+void test_dconv_backprop_cpu()
+{
+    
+    int batch = 100;
+    int h = 8;
+    int w = 8;
+    int c = 32;
+    int n = 64;
+    int groups = 1;
+    int size = 5;
+    int stride = 1;
+    int padding = 5;
+    ACTIVATION activation = LEAKY;
+    int batch_normalize = 0;
+    int binary = 0;
+    int xnor = 0;
+    int adam = 0;
+    int dilate_rate = 2;
+    
+    
+    dilated_convolutional_layer l = make_dilated_conv_layer(
+        batch,h,w,c,n,groups,size,stride,padding,activation, batch_normalize, binary, xnor, adam, dilate_rate);
+    
+    network net = *make_network(1);
+    net.layers = &l;
+
+	net.input = (float*) calloc (batch*h*w*c, sizeof(float));
+	l.weights = (float*) calloc (size*size*c*n, sizeof(float));
+	l.delta = (float*) calloc (batch*l.out_w*l.out_h*l.out_c, sizeof(float));
+	net.delta = (float*) calloc (batch*h*w*c, sizeof(float));
+    l.weight_updates = (float*) calloc (size*size*c*n, sizeof(float));
+    net.workspace = (float*) calloc (l.workspace_size, sizeof(float));
+    
+    FILE *fp;
+	    if((fp=fopen("caffe_backprop_input.txt","r"))==NULL){
+			printf("Open file caffe_backprop_input failed.\n");
+			exit(0);
+		}
+
+		for(int i=0; i<h*w*c*batch; i++){
+			fscanf(fp,"%f,", &net.input[i]);
+		}
+		fclose(fp);
+
+
+		FILE *fin;
+		if ((fin = fopen("caffe_backprop_weights.txt","r"))==NULL){
+			printf("Open file caffe_backprop_weights failed.\n");
+			exit(0);
+		}
+		//fscanf(fin, "%*[^\n]\n", NULL,NULL);
+		for(int i=0; i<size*size*c*n; i++){
+			fscanf(fin, "%f,", &l.weights[i]);
+		}
+		fclose(fin);
+
+		FILE *f1;
+		if ((f1 = fopen("caffe_backprop_topdiff.txt","r"))==NULL){
+			printf("Open file caffe_backprop_topdiff.txt failed.\n");
+			exit(0);
+		}
+		for (int i=0; i<l.out_w*l.out_h*l.out_c*batch; i++){
+			fscanf(f1, "%f,", &l.delta[i]);
+		}
+        fclose(f1);
+    printf("finish reading all inputs.\n");
+
+    
+
+    //forward_dilated_conv_layer_gpu(l, net);
+
+    //printf("forward dconv gpu complete.\n");
+
+
+    
+
+
+    backward_dilated_conv_layer(l,net);
+    printf("backprop dconv gpu complete.\n");
+
+
+    FILE *f;
+	if((f = fopen("darknet_weight_diff.txt", "a"))==NULL){
+		printf("Error opening file weight_diff\n");
+		exit(0);
+	}
+	for (int i=0; i<size*size*n*c; i++){
+		fprintf(f,"%e,",l.weight_updates[i]);
+		if (i%10 == 9) fprintf(f,"\n");
+	}
+	fclose(f);
+
+	FILE *f2;
+	if((f2 = fopen("darknet_bottom_diff.txt", "a"))==NULL){
+		printf("Error opening file bottom_diff\n");
+		exit(0);
+	}
+	for (int i=0; i<h*w*c*batch; i++){
+		fprintf(f2, "%e, ", net.delta[i]);
+		if (i%10 == 9) fprintf(f2,"\n");
+	}
+    fclose(f2);
+    
+    printf("test completed successfully.\n");
+}

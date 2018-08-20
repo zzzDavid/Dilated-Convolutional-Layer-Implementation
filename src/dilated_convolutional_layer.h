@@ -48,6 +48,8 @@ int dilated_conv_out_width(dilated_convolutional_layer layer);
 
 void test_dconv_backprop_gpu();
 void test_dconv_backprop_cpu();
+void test_dconv_forward_gpu();
+void test_dconv_forward_cpu();
 
 #endif
 

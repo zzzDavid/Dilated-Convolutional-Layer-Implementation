@@ -346,7 +346,7 @@ void set_batch_network(network *net, int b)
     for(i = 0; i < net->n; ++i){
         net->layers[i].batch = b;
 #ifdef CUDNN
-        if(net->layers[i].type == CONVOLUTIONAL){
+        if(net->layers[i].type == CONVOLUTIONAL || l.type == DILATED_CONVOLUTIONAL){
             cudnn_convolutional_setup(net->layers + i);
         }
         if(net->layers[i].type == DECONVOLUTIONAL){
@@ -374,7 +374,7 @@ int resize_network(network *net, int w, int h)
     //fflush(stderr);
     for (i = 0; i < net->n; ++i){
         layer l = net->layers[i];
-        if(l.type == CONVOLUTIONAL){
+        if(l.type == CONVOLUTIONAL || l.type == DILATED_CONVOLUTIONAL){
             resize_convolutional_layer(&l, w, h);
         }else if(l.type == CROP){
             resize_crop_layer(&l, w, h);
@@ -485,7 +485,7 @@ void visualize_network(network *net)
     for(i = 0; i < net->n; ++i){
         sprintf(buff, "Layer %d", i);
         layer l = net->layers[i];
-        if(l.type == CONVOLUTIONAL){
+        if(l.type == CONVOLUTIONAL || l.type == DILATED_CONVOLUTIONAL){
             prev = visualize_convolutional_layer(l, buff, prev);
         }
     } 
@@ -879,7 +879,7 @@ pthread_t train_network_in_thread(network *net, data d, float *err)
 
 void merge_weights(layer l, layer base)
 {
-    if (l.type == CONVOLUTIONAL) {
+    if (l.type == CONVOLUTIONAL || l.type == DILATED_CONVOLUTIONAL) {
         axpy_cpu(l.n, 1, l.bias_updates, 1, base.biases, 1);
         axpy_cpu(l.nweights, 1, l.weight_updates, 1, base.weights, 1);
         if (l.scales) {
@@ -893,7 +893,7 @@ void merge_weights(layer l, layer base)
 
 void scale_weights(layer l, float s)
 {
-    if (l.type == CONVOLUTIONAL) {
+    if (l.type == CONVOLUTIONAL || l.type == DILATED_CONVOLUTIONAL) {
         scal_cpu(l.n, s, l.biases, 1);
         scal_cpu(l.nweights, s, l.weights, 1);
         if (l.scales) {
@@ -908,7 +908,7 @@ void scale_weights(layer l, float s)
 
 void pull_weights(layer l)
 {
-    if(l.type == CONVOLUTIONAL || l.type == DECONVOLUTIONAL){
+    if(l.type == CONVOLUTIONAL || l.type == DECONVOLUTIONAL || l.type == DILATED_CONVOLUTIONAL){
         cuda_pull_array(l.biases_gpu, l.bias_updates, l.n);
         cuda_pull_array(l.weights_gpu, l.weight_updates, l.nweights);
         if(l.scales) cuda_pull_array(l.scales_gpu, l.scale_updates, l.n);
@@ -920,7 +920,7 @@ void pull_weights(layer l)
 
 void push_weights(layer l)
 {
-    if(l.type == CONVOLUTIONAL || l.type == DECONVOLUTIONAL){
+    if(l.type == CONVOLUTIONAL || l.type == DECONVOLUTIONAL || l.type == DILATED_CONVOLUTIONAL){
         cuda_push_array(l.biases_gpu, l.biases, l.n);
         cuda_push_array(l.weights_gpu, l.weights, l.nweights);
         if(l.scales) cuda_push_array(l.scales_gpu, l.scales, l.n);
@@ -932,7 +932,7 @@ void push_weights(layer l)
 
 void distribute_weights(layer l, layer base)
 {
-    if (l.type == CONVOLUTIONAL || l.type == DECONVOLUTIONAL) {
+    if (l.type == CONVOLUTIONAL || l.type == DECONVOLUTIONAL || l.type == DILATED_CONVOLUTIONAL) {
         cuda_push_array(l.biases_gpu, base.biases, l.n);
         cuda_push_array(l.weights_gpu, base.weights, l.nweights);
         if (base.scales) cuda_push_array(l.scales_gpu, base.scales, l.n);
