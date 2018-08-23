@@ -41,7 +41,7 @@ void average(int argc, char *argv[])
         for(j = 0; j < net->n; ++j){
             layer l = net->layers[j];
             layer out = sum->layers[j];
-            if(l.type == CONVOLUTIONAL){
+            if(l.type == CONVOLUTIONAL || l.type == DILATED_CONVOLUTIONAL){
                 int num = l.n*l.c*l.size*l.size;
                 axpy_cpu(l.n, 1, l.biases, 1, out.biases, 1);
                 axpy_cpu(num, 1, l.weights, 1, out.weights, 1);
@@ -60,7 +60,7 @@ void average(int argc, char *argv[])
     n = n+1;
     for(j = 0; j < net->n; ++j){
         layer l = sum->layers[j];
-        if(l.type == CONVOLUTIONAL){
+        if(l.type == CONVOLUTIONAL || l.type == DILATED_CONVOLUTIONAL){
             int num = l.n*l.c*l.size*l.size;
             scal_cpu(l.n, 1./n, l.biases, 1);
             scal_cpu(num, 1./n, l.weights, 1);
@@ -84,7 +84,7 @@ long numops(network *net)
     long ops = 0;
     for(i = 0; i < net->n; ++i){
         layer l = net->layers[i];
-        if(l.type == CONVOLUTIONAL){
+        if(l.type == CONVOLUTIONAL || l.type == DECONVOLUTIONAL || l.type == DILATED_CONVOLUTIONAL){
             ops += 2l * l.n * l.size*l.size*l.c/l.groups * l.out_h*l.out_w;
         } else if(l.type == CONNECTED){
             ops += 2l * l.inputs * l.outputs;
@@ -214,7 +214,7 @@ void rescale_net(char *cfgfile, char *weightfile, char *outfile)
     int i;
     for(i = 0; i < net->n; ++i){
         layer l = net->layers[i];
-        if(l.type == CONVOLUTIONAL){
+        if(l.type == CONVOLUTIONAL || l.type == DILATED_CONVOLUTIONAL){
             rescale_weights(l, 2, -.5);
             break;
         }
@@ -229,7 +229,7 @@ void rgbgr_net(char *cfgfile, char *weightfile, char *outfile)
     int i;
     for(i = 0; i < net->n; ++i){
         layer l = net->layers[i];
-        if(l.type == CONVOLUTIONAL){
+        if(l.type == CONVOLUTIONAL || l.type == DILATED_CONVOLUTIONAL){
             rgbgr_weights(l);
             break;
         }
@@ -244,7 +244,7 @@ void reset_normalize_net(char *cfgfile, char *weightfile, char *outfile)
     int i;
     for (i = 0; i < net->n; ++i) {
         layer l = net->layers[i];
-        if (l.type == CONVOLUTIONAL && l.batch_normalize) {
+        if ((l.type == CONVOLUTIONAL || l.type == DILATED_CONVOLUTIONAL) && l.batch_normalize) {
             denormalize_convolutional_layer(l);
         }
         if (l.type == CONNECTED && l.batch_normalize) {
@@ -282,7 +282,7 @@ void normalize_net(char *cfgfile, char *weightfile, char *outfile)
     int i;
     for(i = 0; i < net->n; ++i){
         layer l = net->layers[i];
-        if(l.type == CONVOLUTIONAL && !l.batch_normalize){
+        if((l.type == CONVOLUTIONAL || l.type == DILATED_CONVOLUTIONAL) && !l.batch_normalize){
             net->layers[i] = normalize_layer(l, l.n);
         }
         if (l.type == CONNECTED && !l.batch_normalize) {
@@ -338,7 +338,7 @@ void denormalize_net(char *cfgfile, char *weightfile, char *outfile)
     int i;
     for (i = 0; i < net->n; ++i) {
         layer l = net->layers[i];
-        if ((l.type == DECONVOLUTIONAL || l.type == CONVOLUTIONAL) && l.batch_normalize) {
+        if ((l.type == DECONVOLUTIONAL || l.type == CONVOLUTIONAL || l.type == DILATED_CONVOLUTIONAL) && l.batch_normalize) {
             denormalize_convolutional_layer(l);
             net->layers[i].batch_normalize=0;
         }
@@ -402,19 +402,17 @@ void visualize(char *cfgfile, char *weightfile)
 
 void test_dconv_backprop_gpu();
 void test_dconv_backprop_cpu();
+void test_dconv_forward_gpu();
+void test_dconv_forward_cpu();
 
 int main(int argc, char **argv)
 {
-    //test_resize("data/bad.jpg");
-    //test_box();
-    //test_convolutional_layer();
     if(argc < 2){
         fprintf(stderr, "usage: %s <function>\n", argv[0]);
-        //test dilated_conv
-        //test_dilated_conv_layer();
-        //test_dilated_conv_layer_gpu();
+        //test_dconv_forward_gpu();
+        //test_dconv_backprop_gpu();
+        test_dconv_forward_cpu();
         test_dconv_backprop_cpu();
-        test_dconv_backprop_gpu();
         return 0;
     }
     gpu_index = find_int_arg(argc, argv, "-i", 0);

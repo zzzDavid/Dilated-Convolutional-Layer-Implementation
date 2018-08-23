@@ -213,11 +213,9 @@ dilated_convolutional_layer parse_dilated_convolutional(list *options, size_para
     int n = option_find_int(options, "filters",1);
     int size = option_find_int(options, "size",1);
     int stride = option_find_int(options, "stride",1);
-    int pad = option_find_int_quiet(options, "pad",0);
-    int padding = option_find_int_quiet(options, "padding",0);
+    int pad = option_find_int_quiet(options, "pad",0); // size of padding
     int groups = option_find_int_quiet(options, "groups", 1);
     int dilate_rate = option_find_int_quiet(options, "dilate_rate", 1);
-    if(pad) padding = size/2;
 
     char *activation_s = option_find_str(options, "activation", "logistic");
     ACTIVATION activation = get_activation(activation_s);
@@ -232,7 +230,7 @@ dilated_convolutional_layer parse_dilated_convolutional(list *options, size_para
     int binary = option_find_int_quiet(options, "binary", 0);
     int xnor = option_find_int_quiet(options, "xnor", 0);
 
-    dilated_convolutional_layer layer = make_dilated_conv_layer(batch,h,w,c,n,groups,size,stride,padding,activation, batch_normalize, binary, xnor, params.net->adam, dilate_rate);
+    dilated_convolutional_layer layer = make_dilated_conv_layer(batch,h,w,c,n,groups,size,stride,pad,activation, batch_normalize, binary, xnor, params.net->adam, dilate_rate);
     layer.flipped = option_find_int_quiet(options, "flipped", 0);
     layer.dot = option_find_float_quiet(options, "dot", 0);
 
@@ -788,7 +786,7 @@ network *parse_network_cfg(char *filename)
     n = n->next;
     int count = 0;
     free_section(s);
-    fprintf(stderr, "layer     filters    size              input                output\n");
+    fprintf(stderr, "layer        filters         size              input                output\n");
     while(n){
         params.index = count;
         fprintf(stderr, "%5d ", count);
@@ -1049,7 +1047,7 @@ void save_weights_upto(network *net, char *filename, int cutoff)
     for(i = 0; i < net->n && i < cutoff; ++i){
         layer l = net->layers[i];
         if (l.dontsave) continue;
-        if(l.type == CONVOLUTIONAL || l.type == DECONVOLUTIONAL){
+        if(l.type == CONVOLUTIONAL || l.type == DECONVOLUTIONAL || l.type == DILATED_CONVOLUTIONAL){
             save_convolutional_weights(l, fp);
         } if(l.type == CONNECTED){
             save_connected_weights(l, fp);
@@ -1267,7 +1265,7 @@ void load_weights_upto(network *net, char *filename, int start, int cutoff)
     for(i = start; i < net->n && i < cutoff; ++i){
         layer l = net->layers[i];
         if (l.dontload) continue;
-        if(l.type == CONVOLUTIONAL || l.type == DECONVOLUTIONAL){
+        if(l.type == CONVOLUTIONAL || l.type == DECONVOLUTIONAL || l.type == DILATED_CONVOLUTIONAL){
             load_convolutional_weights(l, fp);
         }
         if(l.type == CONNECTED){

@@ -11,6 +11,8 @@ extern "C" {
 #include "utils.h"
 #include "darknet.h"
 #include "cuda.h"
+#include <stdio.h>
+#include <stdlib.h>
 }
 
 __global__ void binarize_kernel(float *x, int n, float *binary);
@@ -32,7 +34,7 @@ void binarize_weights_gpu(float *weights, int n, int size, float *binary);
 
 void forward_dilated_conv_layer_gpu(dilated_convolutional_layer l, network net)
 {
-    //fill_gpu(l.outputs*l.batch, 0, l.output_gpu, 1);
+    fill_gpu(l.outputs*l.batch, 0, l.output_gpu, 1);
     if(l.binary){
         binarize_weights_gpu(l.weights_gpu, l.n, l.c/l.groups*l.size*l.size, l.binary_weights_gpu);
         swap_binary(&l);
@@ -106,8 +108,7 @@ void backward_dilated_conv_layer_gpu(convolutional_layer l, network net)
 {
     if(l.smooth){
         smooth_layer(l, 5, l.smooth);
-    }
-    //constrain_gpu(l.outputs*l.batch, 1, l.delta_gpu, 1);
+    } 
     gradient_array_gpu(l.output_gpu, l.outputs*l.batch, l.activation, l.delta_gpu);
 
 
@@ -169,7 +170,7 @@ void backward_dilated_conv_layer_gpu(convolutional_layer l, network net)
             float *im  = net.input_gpu+(i*l.groups + j)*l.c/l.groups*l.h*l.w;
             float *imd = net.delta_gpu+(i*l.groups + j)*l.c/l.groups*l.h*l.w;
 
-            im2col_gpu(im, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad, b);
+            im2col_dilated_gpu(im, l.c/l.groups, l.h, l.w, l.size, l.stride, l.pad,l.dilate_rate, b);
             gemm_gpu(0,1,m,n,k,1,a,k,b,k,1,c,n);
 
             if (net.delta_gpu) {
@@ -273,76 +274,24 @@ void update_dilated_conv_layer_gpu(layer l, update_args a)
     }
 }
 
-
-
-void test_dconv_backprop_gpu()
+void test_dconv_forward_gpu()
 {
     
-    int batch = 1;
-    int h = 10;
-    int w = 10;
+    int batch = 100;
+    int h = 32;
+    int w = 32;
     int c = 3;
-    int n = 1;
+    int n = 32;
     int groups = 1;
-    int size = 3;
+    int size = 5;
     int stride = 1;
-    int padding = 3;
+    int padding = 5;
     ACTIVATION activation = LEAKY;
     int batch_normalize = 0;
     int binary = 0;
     int xnor = 0;
     int adam = 0;
     int dilate_rate = 2;
-    
-    // data: 10*10*3
-    // weights: 3*3*3 -> 7*7*3, padding = 3
-    // output: 10*10*3
-    // delta: 10*10*3
-    float data[] = {
-        1,1,1,1,1,1,1,1,1,1,
-        2,2,2,2,2,2,2,2,2,2,
-        3,3,3,3,3,3,3,3,3,3,
-        4,4,4,4,4,4,4,4,4,4,
-        5,5,5,5,5,5,5,5,5,5,
-        6,6,6,6,6,6,6,6,6,6,
-        7,7,7,7,7,7,7,7,7,7,
-        8,8,8,8,8,8,8,8,8,8,
-        9,9,9,9,9,9,9,9,9,9,
-        9,9,9,9,9,9,9,9,9,9,
-
-        1,1,1,1,1,1,1,1,1,1,
-        2,2,2,2,2,2,2,2,2,2,
-        3,3,3,3,3,3,3,3,3,3,
-        4,4,4,4,4,4,4,4,4,4,
-        5,5,5,5,5,5,5,5,5,5,
-        6,6,6,6,6,6,6,6,6,6,
-        7,7,7,7,7,7,7,7,7,7,
-        8,8,8,8,8,8,8,8,8,8,
-        9,9,9,9,9,9,9,9,9,9,
-        9,9,9,9,9,9,9,9,9,9,
-
-        1,1,1,1,1,1,1,1,1,1,
-        2,2,2,2,2,2,2,2,2,2,
-        3,3,3,3,3,3,3,3,3,3,
-        4,4,4,4,4,4,4,4,4,4,
-        5,5,5,5,5,5,5,5,5,5,
-        6,6,6,6,6,6,6,6,6,6,
-        7,7,7,7,7,7,7,7,7,7,
-        8,8,8,8,8,8,8,8,8,8,
-        9,9,9,9,9,9,9,9,9,9,
-        9,9,9,9,9,9,9,9,9,9};
-    float weights[27] = {0};
-        for(int i=0; i<27; i++) weights[i] = 1;
-    float delta[10*10*1] = {0};
-        for (int i=0; i<10*10*1; i++) delta[i] = i+1;
-    float weight_updates[3*3*3];
-        for (int i=0; i<3*3*3; i++) weight_updates[i] = 0;
-    float upper_delta[10*10*3];
-        for (int i=0; i<10*10*3; i++) upper_delta[i] = 0;
-    float work[3*3*3*10*10*1] = {0};
-        for (int i=0; i<3*3*3*10*10*1; i++) work[i] = 0;
-    float output[10*10*1];
-        for (int i=0; i<10*10*1; i++) output[i] = 0;
     
     
     dilated_convolutional_layer l = make_dilated_conv_layer(
@@ -351,51 +300,185 @@ void test_dconv_backprop_gpu()
     network net = *make_network(1);
     net.layers = &l;
 
-    cudaMalloc((void**)&l.output_gpu, 10*10*1*sizeof(float));
-	cudaMalloc((void**)&l.weights_gpu, 3*3*3*sizeof(float));
-	cudaMalloc((void**)&l.weight_updates_gpu, 3*3*3*sizeof(float));
-	cudaMalloc((void**)&l.delta_gpu, 10*10*1*sizeof(float));
-	cudaMalloc((void**)&net.input_gpu, 10*10*3*sizeof(float));
-	cudaMalloc((void**)&net.workspace, 3*3*3*10*10*sizeof(float));
-	cudaMalloc((void**)&net.delta_gpu, 10*10*3*sizeof(float));
+    float *input_cpu, *weights_cpu, *output_cpu;
+	input_cpu = (float*) calloc (batch*h*w*c, sizeof(float));
+	weights_cpu = (float*) calloc (size*size*c*n, sizeof(float));
+    output_cpu = (float*) calloc (batch*l.out_c*l.out_h*l.out_w, sizeof(float));
+    
+    FILE *fp;
+	    if((fp=fopen("caffe_forward_input.txt","r"))==NULL){
+			printf("Open file caffe_forward_input failed.\n");
+			exit(0);
+		}
 
-    cudaMemcpy(l.output_gpu, output, 10*10*1*sizeof(float),cudaMemcpyHostToDevice);
-    cudaMemcpy(l.weights_gpu, weights, 3*3*3*sizeof(float),cudaMemcpyHostToDevice);
-    cudaMemcpy(l.weight_updates_gpu, weight_updates, 3*3*3*sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(l.delta_gpu, delta, 10*10*1*sizeof(float),cudaMemcpyHostToDevice);
-    cudaMemcpy(net.input_gpu, data, 10*10*3*sizeof(float),cudaMemcpyHostToDevice);
-    cudaMemcpy(net.workspace, work, 3*3*3*10*10*sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(net.delta_gpu, upper_delta, 10*10*3*sizeof(float),cudaMemcpyHostToDevice);
+		for(int i=0; i<h*w*c*batch; i++){
+			fscanf(fp,"%f,", &input_cpu[i]);
+		}
+		fclose(fp);
+
+
+		FILE *fin;
+		if ((fin = fopen("caffe_forward_weights.txt","r"))==NULL){
+			printf("Open file caffe_forward_weights failed.\n");
+			exit(0);
+		}
+		//fscanf(fin, "%*[^\n]\n", NULL,NULL);
+		for(int i=0; i<size*size*c*n; i++){
+			fscanf(fin, "%f,", &weights_cpu[i]);
+		}
+		fclose(fin);
+    printf("finish reading all inputs.\n");
+
+    cudaMalloc((void**)&l.output_gpu, batch*l.out_w*l.out_h*l.out_c*sizeof(float));
+	cudaMalloc((void**)&l.weights_gpu, size*size*c*n*sizeof(float));
+	cudaMalloc((void**)&net.input_gpu, batch*h*w*c*sizeof(float));
+	cudaMalloc((void**)&net.workspace, batch*size*size*c*l.out_w*l.out_h*sizeof(float));
+
+
+    cudaMemcpy(l.output_gpu, output_cpu, batch*l.out_w*l.out_h*l.out_c*sizeof(float),cudaMemcpyHostToDevice);
+    cudaMemcpy(l.weights_gpu, weights_cpu, size*size*c*n*sizeof(float),cudaMemcpyHostToDevice);
+    cudaMemcpy(net.input_gpu, input_cpu, batch*h*w*c*sizeof(float),cudaMemcpyHostToDevice);
+    
     forward_dilated_conv_layer_gpu(l, net);
 
     printf("forward dconv gpu complete.\n");
 
-    cudaMemcpy(output, l.output_gpu, 10*10*sizeof(float),cudaMemcpyDeviceToHost);
+    cudaMemcpy(output_cpu, l.output_gpu, batch*l.out_c*l.out_w*l.out_h*sizeof(float),cudaMemcpyDeviceToHost);
     
-    printf("GPU Output = 10*10*1\n");
-    for(int i=0; i<10; i++){
-        for(int j=0; j<10; j++){
-            printf("%f\t",output[i*10+j]);
-        }printf("\n");
-    }printf("\n");
+    FILE *f3;
+	if((f3 = fopen("darknet_output.txt", "a"))==NULL){
+		printf("Error opening file darknet_output\n");
+		exit(0);
+	}
+	for (int i=0; i<l.out_c*l.out_h*l.out_w*batch; i++){
+		fprintf(f3, "%e, ", output_cpu[i]);
+		if (i%10 == 9) fprintf(f3,"\n");
+	}
+    fclose(f3);
+    
+    printf("test completed successfully.\n");
+}
+
+
+void test_dconv_backprop_gpu()
+{
+    
+    int batch = 100;
+    int h = 8;
+    int w = 8;
+    int c = 32;
+    int n = 64;
+    int groups = 1;
+    int size = 5;
+    int stride = 1;
+    int padding = 5;
+    ACTIVATION activation = LEAKY;
+    int batch_normalize = 0;
+    int binary = 0;
+    int xnor = 0;
+    int adam = 0;
+    int dilate_rate = 2;
+    
+    
+    dilated_convolutional_layer l = make_dilated_conv_layer(
+        batch,h,w,c,n,groups,size,stride,padding,activation, batch_normalize, binary, xnor, adam, dilate_rate);
+    
+    network net = *make_network(1);
+    net.layers = &l;
+
+    float *input_cpu, *weights_cpu, *delta_cpu, *weight_updates_cpu, *upperdelta_cpu, *output_cpu;
+	input_cpu = (float*) calloc (batch*h*w*c, sizeof(float));
+	weights_cpu = (float*) calloc (size*size*c*n, sizeof(float));
+	delta_cpu = (float*) calloc (batch*l.out_w*l.out_h*l.out_c, sizeof(float));
+	upperdelta_cpu = (float*) calloc (batch*h*w*c, sizeof(float));
+    weight_updates_cpu = (float*) calloc (size*size*c*n, sizeof(float));
+    output_cpu = (float*) calloc (batch*l.out_c*l.out_h*l.out_w, sizeof(float));
+    
+    FILE *fp;
+	    if((fp=fopen("caffe_backprop_input.txt","r"))==NULL){
+			printf("Open file caffe_backprop_input failed.\n");
+			exit(0);
+		}
+
+		for(int i=0; i<h*w*c*batch; i++){
+			fscanf(fp,"%f,", &input_cpu[i]);
+		}
+		fclose(fp);
+
+
+		FILE *fin;
+		if ((fin = fopen("caffe_backprop_weights.txt","r"))==NULL){
+			printf("Open file caffe_backprop_weights failed.\n");
+			exit(0);
+		}
+		//fscanf(fin, "%*[^\n]\n", NULL,NULL);
+		for(int i=0; i<size*size*c*n; i++){
+			fscanf(fin, "%f,", &weights_cpu[i]);
+		}
+		fclose(fin);
+
+		FILE *f1;
+		if ((f1 = fopen("caffe_backprop_topdiff.txt","r"))==NULL){
+			printf("Open file caffe_backprop_topdiff.txt failed.\n");
+			exit(0);
+		}
+		for (int i=0; i<l.out_w*l.out_h*l.out_c*batch; i++){
+			fscanf(f1, "%f,", &delta_cpu[i]);
+		}
+        fclose(f1);
+    printf("finish reading all inputs.\n");
+
+    cudaMalloc((void**)&l.output_gpu, batch*l.out_w*l.out_h*l.out_c*sizeof(float));
+	cudaMalloc((void**)&l.weights_gpu, size*size*c*n*sizeof(float));
+	cudaMalloc((void**)&l.weight_updates_gpu, size*size*c*n*sizeof(float));
+	cudaMalloc((void**)&l.delta_gpu, batch*l.out_w*l.out_h*l.out_c*sizeof(float));
+	cudaMalloc((void**)&net.input_gpu, batch*h*w*c*sizeof(float));
+	cudaMalloc((void**)&net.workspace, batch*size*size*c*l.out_w*l.out_h*sizeof(float));
+	cudaMalloc((void**)&net.delta_gpu, batch*c*h*w*sizeof(float));
+
+    cudaMemcpy(l.output_gpu, output_cpu, batch*l.out_w*l.out_h*l.out_c*sizeof(float),cudaMemcpyHostToDevice);
+    cudaMemcpy(l.weights_gpu, weights_cpu, size*size*c*n*sizeof(float),cudaMemcpyHostToDevice);
+    cudaMemcpy(l.weight_updates_gpu, weight_updates_cpu, size*size*c*n*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(l.delta_gpu, delta_cpu, batch*l.out_w*l.out_h*l.out_c*sizeof(float),cudaMemcpyHostToDevice);
+    cudaMemcpy(net.input_gpu, input_cpu, batch*h*w*c*sizeof(float),cudaMemcpyHostToDevice);
+    cudaMemcpy(net.delta_gpu, upperdelta_cpu, c*h*w*sizeof(float),cudaMemcpyHostToDevice);
+
+    //forward_dilated_conv_layer_gpu(l, net);
+
+    //printf("forward dconv gpu complete.\n");
+
+    cudaMemcpy(output_cpu, l.output_gpu, batch*l.out_c*l.out_w*l.out_h*sizeof(float),cudaMemcpyDeviceToHost);
+    
+
 
     backward_dilated_conv_layer_gpu(l,net);
-    // l.weight_updates, net.delta
-    cudaMemcpy(weight_updates, l.weight_updates_gpu, 3*3*3*sizeof(float),cudaMemcpyDeviceToHost);
-    printf("GPU Weight Updates = \n");
-    for(int i=0; i<3; i++){
-        for(int j=0; j<3*3; j++){
-            printf("%f\t", weight_updates[i*3+j]);
-        }
-        printf("\n");
-    }printf("\n");
+    printf("backprop dconv gpu complete.\n");
 
-    printf("GPU Upper layer delta = \n");
-    cudaMemcpy(upper_delta, net.delta_gpu, 10*10*3*sizeof(float),cudaMemcpyDeviceToHost);
-    for(int i=0; i<10*3; i++){
-        for(int j=0; j<10; j++){
-            printf("%f\t", upper_delta[i*10+j]);
-        }
-        printf("\n");
-    }printf("\n");
+    cudaMemcpy(weight_updates_cpu, l.weight_updates_gpu, size*size*c*n*sizeof(float),cudaMemcpyDeviceToHost);
+
+    cudaMemcpy(upperdelta_cpu, net.delta_gpu, batch*h*w*c*sizeof(float),cudaMemcpyDeviceToHost);
+
+    FILE *f;
+	if((f = fopen("darknet_weight_diff.txt", "a"))==NULL){
+		printf("Error opening file weight_diff\n");
+		exit(0);
+	}
+	for (int i=0; i<size*size*n*c; i++){
+		fprintf(f,"%e,",weight_updates_cpu[i]);
+		if (i%10 == 9) fprintf(f,"\n");
+	}
+	fclose(f);
+
+	FILE *f2;
+	if((f2 = fopen("darknet_bottom_diff.txt", "a"))==NULL){
+		printf("Error opening file bottom_diff\n");
+		exit(0);
+	}
+	for (int i=0; i<h*w*c*batch; i++){
+		fprintf(f2, "%e, ", upperdelta_cpu[i]);
+		if (i%10 == 9) fprintf(f2,"\n");
+	}
+    fclose(f2);
+    
+    printf("test completed successfully.\n");
 }

@@ -36,6 +36,16 @@ void forward_dilated_conv_layer(const dilated_convolutional_layer layer, network
 void update_dilated_conv_layer(dilated_convolutional_layer layer, update_args a);
 image *visualize_dilated_conv_layer(dilated_convolutional_layer layer, char *window, image *prev_weights);
 
+
+
+void add_bias_dilated(float *output, float *biases, int batch, int n, int size);
+void backward_bias_dilated(float *bias_updates, float *delta, int batch, int n, int size);
+void scale_bias_dilated(float *output, float *scales, int batch, int n, int size);
+image *get_weights_dilated(dilated_convolutional_layer l);
+void rescale_weights_dilated(dilated_convolutional_layer l, float scale, float trans);
+void rgbgr_weights_dilated(dilated_convolutional_layer l);
+
+
 void backward_dilated_conv_layer(dilated_convolutional_layer layer, network net);
 
 
@@ -48,6 +58,8 @@ int dilated_conv_out_width(dilated_convolutional_layer layer);
 
 void test_dconv_backprop_gpu();
 void test_dconv_backprop_cpu();
+void test_dconv_forward_gpu();
+void test_dconv_forward_cpu();
 
 #endif
 

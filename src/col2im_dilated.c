@@ -2,8 +2,18 @@
 #include <math.h>
 #include "col2im.h"
 #include "col2im_dilated.h"
-void col2im_add_pixel(float *im, int height, int width, int channels,
-                        int row, int col, int channel, int pad, float val);
+void col2im_add_pixel_dilated(float *im, int height, int width, int channels,
+                        int row, int col, int channel, int pad, float val)
+{
+    row -= pad;
+    col -= pad;
+
+    if ((row-1) < 0 || (col-1) < 0 ||
+        (row-1) >= height || (col-1) >= width){
+            return;
+        }
+    im[col-1 + width*(row-1 + height*channel)] += val;
+}
 
 
 void col2im_dilated_cpu(float* data_col,
@@ -33,7 +43,7 @@ void col2im_dilated_cpu(float* data_col,
                 int col_index = ((c-1) * height_col + h) * width_col + w;
                 double val = data_col[col_index];
                 //printf("im_row = %d, im_col = %d, val = %d\t location in window:(%d, %d)\n",im_row, im_col, (int)val, h_offset, w_offset);
-                col2im_add_pixel(data_im, height, width, channels,
+                col2im_add_pixel_dilated(data_im, height, width, channels,
                         im_row, im_col, c_im, pad, val);
             }
         }
