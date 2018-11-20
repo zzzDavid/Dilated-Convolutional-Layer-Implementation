@@ -2,7 +2,7 @@
 This implementation of dilated convolutional layer was accomplished during my internship in Zerotech Inc., Beijing. The need for dilated convolutional layer comes from training `CSRNet` for crowd detection.
 
 ## About Darknet
-Darknet is an open source neural network framework written in C and CUDA by Joseph Redmon. It is fast, easy to install, and supports CPU and GPU computation. For more information see the [Darknet project website](http://pjreddie.com/darknet).
+Darknet is an open source neural network framework written in C and CUDA by Joseph Redmon. It is fast, easy to install, and supports CPU and GPU computation. For more information please refer to the [Darknet project website](http://pjreddie.com/darknet).
 ### Darknet Dependency
 Darknet has only two dependencies, and they are optional:
 ```
@@ -34,8 +34,8 @@ activation=leaky
 dilate_rate=1
 ```
 Here's a demonstration of dilated convolution and dilate rate:
-![window]{./img/dconv_demo.PNG}
+![window](./img/dconv_demo.PNG)
 Dilated convolution expands its convolutional kernel according to dilate rate. In this demonstration, dilate rate = 1. If dilate rate = 0, dilated convolution is simply normal convolution.
 
 ### CSRNet composed with this implementation training result
-![window]{./img/CSRNet_density_0.png}
+![window](./img/CSRNet_density_0.png)
