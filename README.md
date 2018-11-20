@@ -38,4 +38,9 @@ Here's a demonstration of dilated convolution and dilate rate:
 Dilated convolution expands its convolutional kernel according to dilate rate. In this demonstration, dilate rate = 1. If dilate rate = 0, dilated convolution is simply normal convolution.
 
 ### CSRNet composed with this implementation training result
+![window](./img/CSRNet_rgb_0.png)
 ![window](./img/CSRNet_density_0.png)
+
+### Yolov3-tiny with dilated conv layer trained from scratch
+![window](./img/person.png)
+This configuration file is included in `./cfg/yolo-d-tiny.cfg`
