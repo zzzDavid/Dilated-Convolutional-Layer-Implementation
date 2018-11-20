@@ -43,4 +43,5 @@ Dilated convolution expands its convolutional kernel according to dilate rate. I
 
 ### Yolov3-tiny with dilated conv layer trained from scratch
 ![window](./img/person.png)
+
 This configuration file is included in `./cfg/yolo-d-tiny.cfg`
