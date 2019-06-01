@@ -24,9 +24,10 @@ void im2col_dilated_cpu(float* data_im,
                 int im_row = h_offset * dilate_rate + h * stride;
                 int im_col = w_offset * dilate_rate + w * stride;
                 int col_index = (c * height_col + h) * width_col + w;
-                fprintf("im_row = %d, im_col = %d", im_row, im_col);
                 data_col[col_index] = im2col_get_pixel(data_im, height, width, channels,
                         im_row, im_col, c_im, pad);
+		printf("im_row = %d, im_col = %d, pixel = %f\n", im_row, im_col, data_col[col_index]);
+
             }
         }
     }

@@ -612,7 +612,7 @@ void test_new_dconv_forward_cpu()
     l.output = (float*) calloc (batch*l.out_c*l.out_h*l.out_w, sizeof(float));
     net.workspace = (float*) calloc (l.workspace_size, sizeof(float));
 
-    int num = 1;
+    int num = 0;
     for (int i = 0; i < 9; i++)
     {
         for (int j = 0; j < 9; j++)
