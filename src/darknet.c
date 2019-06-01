@@ -404,6 +404,7 @@ void test_dconv_backprop_gpu();
 void test_dconv_backprop_cpu();
 void test_dconv_forward_gpu();
 void test_dconv_forward_cpu();
+void test_new_dconv_forward_cpu();
 
 int main(int argc, char **argv)
 {
@@ -411,8 +412,9 @@ int main(int argc, char **argv)
         fprintf(stderr, "usage: %s <function>\n", argv[0]);
         //test_dconv_forward_gpu();
         //test_dconv_backprop_gpu();
-        test_dconv_forward_cpu();
-        test_dconv_backprop_cpu();
+        //test_dconv_forward_cpu();
+        test_new_dconv_forward_cpu();
+        //test_dconv_backprop_cpu();
         return 0;
     }
     gpu_index = find_int_arg(argc, argv, "-i", 0);

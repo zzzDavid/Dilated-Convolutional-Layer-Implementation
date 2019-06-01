@@ -583,6 +583,59 @@ void test_dconv_forward_cpu()
     printf("test completed successfully.\n");
 }
 
+void test_new_dconv_forward_cpu()
+{
+    int batch = 1;
+    int h = 9;
+    int w = 9;
+    int c = 1;
+    int n = 1;
+    int groups = 1;
+    int size = 3;
+    int stride = 2;
+    int padding = 0;
+    ACTIVATION activation = LEAKY;
+    int batch_normalize = 0;
+    int binary = 0;
+    int xnor = 0;
+    int adam = 0;
+    int dilate_rate = 2;
+    
+    dilated_convolutional_layer l = make_dilated_conv_layer(
+        batch,h,w,c,n,groups,size,stride,padding,activation, batch_normalize, binary, xnor, adam, dilate_rate);
+    
+    network net = *make_network(1);
+    net.layers = &l;
+
+	net.input = (float*) calloc (batch*h*w*c, sizeof(float));
+	l.weights = (float*) calloc (size*size*c*n, sizeof(float));
+    l.output = (float*) calloc (batch*l.out_c*l.out_h*l.out_w, sizeof(float));
+    net.workspace = (float*) calloc (l.workspace_size, sizeof(float));
+
+    int num = 1;
+    for (int i = 0; i < 9; i++)
+    {
+        for (int j = 0; j < 9; j++)
+        {
+            net.input[i + 9 * j] = num;
+            num++;
+        }   
+    }
+
+    for (int i = 0; i< 9; i++)
+    {
+        l.weights[i] = 1;
+    }
+
+   
+    forward_dilated_conv_layer(l, net);
+
+    printf("forward dconv cpu complete.\n");
+
+    
+    printf("test completed successfully.\n");
+}
+
 
 void test_dconv_backprop_cpu()
 {
